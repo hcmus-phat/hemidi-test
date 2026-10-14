@@ -144,7 +144,7 @@ Hệ thống **không có** frontend, đăng nhập hay thanh toán.
 
 ## 5. Ràng buộc kỹ thuật
 
-- NestJS (TypeScript), PostgreSQL ≥ 14, TypeORM 0.3.x, BullMQ 5.x (`@nestjs/bullmq`), Redis ≥ 6.2 với `maxmemory-policy noeviction`, `@nestjs/swagger`.
+- NestJS (TypeScript), PostgreSQL ≥ 14, TypeORM 0.3.x, BullMQ 5.x (`@nestjs/bullmq`), Redis ≥ 6.2 với `maxmemory-policy noeviction`, `@nestjs/swagger`. Khi bắt đầu code, dự án dùng bản ổn định mới hơn: NestJS 12, TypeORM 1.x, BullMQ 6.x ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)).
 - Không dùng `synchronize: true`, kể cả ở môi trường dev.
 - API deploy trên Vercel hoặc Netlify. Worker deploy trên nền tảng hỗ trợ tiến trình chạy lâu dài (Render/Railway/Fly.io) hoặc dùng cron. Lý do lựa chọn phải ghi trong README.
 

@@ -72,7 +72,6 @@ docker compose up -d
 # 3. Cài đặt và migration
 npm ci
 npm run migration:run
-npm run seed                          # tùy chọn
 
 # 4. Chạy (2 terminal)
 npm run start:dev                     # API:    http://localhost:3000, Swagger: http://localhost:3000/api/docs
@@ -93,7 +92,6 @@ npm run start:worker:dev              # Worker: xem log xử lý job
 | `migration:run` / `migration:revert` | `npm run typeorm -- migration:run` / `migration:revert` | Chạy / lùi migration (dev) |
 | `migration:show` | `npm run typeorm -- migration:show` | Liệt kê migration đã chạy và đang chờ |
 | `migration:run:prod` | `typeorm -d dist/database/data-source.js migration:run` | Chạy migration từ code đã build |
-| `seed` | `ts-node src/database/seed.ts` | Dữ liệu mẫu |
 | `job:expire-now` | `ts-node src/scripts/expire-now.ts` | Gọi `expireStaleOrders()` một lần, dùng cho MT-09. Script dùng `AppModule` (không có worker), chỉ cần DB. `ts-node` dùng `tsconfig.json` của dự án và chạy được trên Windows, mất khoảng 8–10s vì phải kiểm tra kiểu |
 | `job:requeue` | `ts-node src/scripts/requeue-order.ts` | `npm run job:requeue -- <orderId>`: xóa job `order-<id>` rồi đẩy lại, dùng cho MT-08 |
 | `race:last-item` | `ts-node src/scripts/race-last-item.ts` | `npm run race:last-item -- [baseUrl] [N]`: N đơn đồng thời cho một sản phẩm `stock = 1` trên API đang chạy, in kết quả ([06 §9](06-concurrency.md#9-kiểm-chứng)) |

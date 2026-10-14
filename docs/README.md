@@ -1,6 +1,8 @@
 # Mini Order Management — Bộ tài liệu đặc tả
 
-> Phiên bản: 1.0 · Cập nhật: 2026-10-14
+> Phiên bản: 1.0 · Cập nhật: 2026-10-15
+
+README ở thư mục gốc ([`../README.md`](../README.md)) tóm tắt cách chạy, thiết kế và trạng thái của bài nộp. Bộ tài liệu này là đặc tả chi tiết.
 
 Đây là backend quản lý **sản phẩm**, **tồn kho** và **đơn hàng** cho một cửa hàng online nhỏ.
 Khi khách đặt hàng, hệ thống trừ kho và tạo đơn ngay trong **một transaction** (đồng bộ).
@@ -23,7 +25,7 @@ Phần xử lý đơn (xác nhận đơn, ghi thông báo, thử lại khi lỗi
 | 07 | [Kế hoạch kiểm thử](07-testing.md) | 3 unit test bắt buộc, test bổ sung, test đồng thời, kịch bản test thủ công |
 | 08 | [Triển khai](08-deployment.md) | Chạy local, docker-compose, deploy API (Vercel) và worker (Railway), migration production |
 | 09 | [Kế hoạch thực hiện](09-implementation-plan.md) | Thứ tự làm, kế hoạch commit, Definition of Done, checklist nộp bài, chuẩn bị phỏng vấn |
-| 10 | [Nhật ký quyết định kỹ thuật (ADR)](10-technical-decisions.md) | 28 quyết định: lựa chọn, lý do, phương án đã cân nhắc, trạng thái duyệt |
+| 10 | [Nhật ký quyết định kỹ thuật (ADR)](10-technical-decisions.md) | 29 quyết định: lựa chọn, lý do, phương án đã cân nhắc, trạng thái duyệt |
 
 **Thứ tự nên đọc:** 10 (bảng tổng hợp) → 01 → 03 → 06 → 05 → 04 → 02 → 07 → 08 → 09.
 Bên chấm bài đánh giá cao **tính đúng khi có nhiều request đồng thời**, **xử lý lỗi/retry**, **thiết kế dữ liệu** và **code dễ đọc**. Các tài liệu 03, 05, 06 là phần lõi.

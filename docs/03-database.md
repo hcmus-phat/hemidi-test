@@ -350,4 +350,4 @@ Script npm (chi tiết ở [08 §2](08-deployment.md#2-chạy-local)):
 
 ## 8. Dữ liệu mẫu (seed, tùy chọn)
 
-Script `npm run seed` tạo khoảng 10 sản phẩm, trong đó có ít nhất một sản phẩm `stock = 1` (`LAST-ITEM-001`) để demo tình huống tranh chấp món cuối.
+**Chưa làm** (ghi trong mục "Phần chưa làm được" của README). Dự kiến: script `npm run seed` tạo khoảng 10 sản phẩm, trong đó có ít nhất một sản phẩm `stock = 1` (`LAST-ITEM-001`) để demo tình huống tranh chấp món cuối. Hiện `npm run race:last-item` tự tạo một sản phẩm `stock = 1` cho demo đó ([06 §9](06-concurrency.md#9-kiểm-chứng)).
