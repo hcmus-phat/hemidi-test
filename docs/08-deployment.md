@@ -216,16 +216,25 @@ Vì vậy API (serverless) chỉ ghi đơn kèm sự kiện outbox vào DB. **Re
 7. **Replicas:** 1. **Restart policy:** On failure. (Scale lên nhiều replica vẫn an toàn nhờ `SKIP LOCKED` và lock job của BullMQ.)
 8. **Kiểm tra log:** thấy `Worker started on queue order-processing`, `Outbox relay started` và `Job scheduler expire-pending-orders upserted`.
 
-`src/worker.ts`:
+`src/worker.ts` (rút gọn):
 
 ```ts
-async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(WorkerModule);
-  app.enableShutdownHooks();   // SIGTERM: dừng relay outbox, worker.close() chờ job đang chạy xong
-  Logger.log(`Worker started on queue ${ORDER_PROCESSING_QUEUE}`, 'Worker');
+async function bootstrap(): Promise<void> {
+  // abortOnError: false để lỗi khởi động rơi vào catch bên dưới
+  const app = await NestFactory.createApplicationContext(WorkerModule, { abortOnError: false });
+  app.enableShutdownHooks();   // SIGTERM/SIGINT: dừng relay outbox, worker.close() chờ job đang chạy xong
+  exitIfShutdownHangs();       // quá 10s mà chưa tắt xong (ví dụ Redis đang tắt) thì exit(1)
+  Logger.log('Worker started', 'Worker');
 }
-bootstrap();
+
+bootstrap().catch((error: unknown) => {
+  Logger.error(`Worker failed to start: ${errorMessage(error)}`, error instanceof Error ? error.stack : undefined, 'Worker');
+  process.exit(1);             // Railway (restart policy On failure) khởi động lại
+});
 ```
+
+> Grace period giữa SIGTERM và SIGKILL của nền tảng nên ≥ 10s (Docker mặc định 10s), để job đang chạy kịp xong.
+> `npm run start:dev` và `npm run start:worker:dev` cùng biên dịch vào `dist/`. Hãy chạy lần lượt (đợi lệnh thứ nhất in `Found 0 errors`), vì `deleteOutDir` xóa `dist/` khi mỗi lệnh bắt đầu.
 
 ### 5.4 Phương án thay thế
 

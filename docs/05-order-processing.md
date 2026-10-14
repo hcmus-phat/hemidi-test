@@ -219,6 +219,15 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
 }
 ```
 
+Code thật (`src/outbox/outbox-relay.service.ts`, `src/outbox/outbox.repository.ts`) khác mẫu ở vài điểm:
+
+- **Dừng gọn:** `onModuleDestroy` đặt cờ dừng, hủy timer rồi **chờ lô đang chạy commit xong**. Hook này chạy trước `onApplicationShutdown`, nơi Nest đóng DataSource và kết nối Redis, nên lô không bị cắt ngang giữa chừng. Sau khi dừng, `schedule()` không đặt timer mới.
+- **Payload sai:** nếu `payload.orderId` không phải UUID, sự kiện bị `markFailed` với lý do `Invalid ORDER_CREATED payload: …` và relay đi tiếp sang sự kiện sau. Lỗi này không phải lỗi Redis nên không làm giãn chu kỳ quét, cũng không làm dừng lô.
+- **Đếm lần thử:** `markPublished` đặt `published_at = now()` (đồng hồ DB) **và** tăng `publish_attempts`, nên một sự kiện đẩy được ngay có `publishAttempts = 1` ([04 §4.6](04-api-spec.md#46-get-ordersidjobs)). `last_error` được giữ lại sau khi đẩy thành công, để biết vì sao sự kiện bị trễ. `markFailed` cắt `last_error` còn tối đa 1000 ký tự.
+- **Timeout:** `enqueueProcessOrder` có timeout 3s (§4.1). Khi Redis tắt, `last_error` thường là `Redis did not answer within 3000 ms`, log `WARN` của queue ghi lỗi gốc (ví dụ `connect ECONNREFUSED`).
+- **Log:** `Outbox relay started (…)`, `Published N outbox event(s)` khi có sự kiện được đẩy, và `Outbox relay: next poll in N ms` mỗi lần giãn chu kỳ (2s, 4s, 8s, 16s, 30s).
+- Chạy nhiều relay cùng lúc: relay nào không lấy được dòng nào (vì dòng đang bị instance khác khóa, `SKIP LOCKED`) thì coi như lô thành công và quét lại theo chu kỳ bình thường.
+
 ### 3.3 Vì sao chọn Outbox
 
 | Cách làm | Vấn đề |
@@ -556,4 +565,4 @@ async getOrderJobs(orderId: string): Promise<OrderJobDto[]> {
 | DB lỗi khi xử lý job | Lần thử lỗi, rồi retry | Nếu lần cuối `failOrder` cũng lỗi, đơn vẫn `PENDING` và job hết hạn xử lý |
 | Mất dữ liệu Redis | Mất job và lịch sử job | DB vẫn đúng. Đơn `PENDING` bị hủy khi hết hạn. Scheduler được upsert lại khi worker khởi động |
 | Redis tự xóa key (eviction) | Job biến mất không báo lỗi | Bắt buộc `maxmemory-policy noeviction` ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) |
-| Deploy hoặc restart worker | SIGTERM | `enableShutdownHooks()`: dừng relay, `worker.close()` chờ job đang chạy xong rồi mới thoát |
+| Deploy hoặc restart worker | SIGTERM | `enableShutdownHooks()`: dừng relay, `worker.close()` chờ job đang chạy xong rồi mới thoát. Nếu sau 10s vẫn chưa xong (ví dụ Redis đang tắt: lệnh `QUIT` của ioredis phải chờ sau các lệnh còn nằm trong offline queue), `src/worker.ts` ghi log lỗi và `exit(1)` |

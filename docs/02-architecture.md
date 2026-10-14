@@ -61,7 +61,7 @@ flowchart LR
 │   └── index.ts                      # Handler cho Vercel: tạo Nest app một lần rồi cache lại
 ├── src/
 │   ├── main.ts                       # Bootstrap HTTP (local)
-│   ├── worker.ts                     # Bootstrap worker (không HTTP)
+│   ├── worker.ts                     # Bootstrap worker (không HTTP), shutdown hooks, quá 10s thì exit(1)
 │   ├── app.module.ts                 # Module gốc của API
 │   ├── worker.module.ts              # Module gốc của worker (chứa processor + scheduler)
 │   ├── bootstrap/
@@ -71,6 +71,7 @@ flowchart LR
 │   │   ├── configuration.ts          # Đọc env, trả về object cấu hình có kiểu
 │   │   └── env.validation.ts         # Validate env lúc khởi động (sai thì dừng ngay)
 │   ├── database/
+│   │   ├── database.module.ts        # TypeOrmModule.forRootAsync, dùng chung AppModule và WorkerModule
 │   │   ├── typeorm.options.ts        # Options dùng chung cho app và CLI
 │   │   ├── data-source.ts            # DataSource cho TypeORM CLI (migration)
 │   │   └── migrations/               # Migration viết tay hoặc generate rồi review lại
@@ -99,7 +100,8 @@ flowchart LR
 │   │   └── utils/
 │   │       ├── sleep.ts
 │   │       ├── with-timeout.ts            # withTimeout(promise, ms): giới hạn thời gian chờ Redis
-│   │       └── error-message.ts           # errorMessage(): thông điệp đọc được của mọi lỗi (kể cả AggregateError)
+│   │       ├── error-message.ts           # errorMessage(): thông điệp đọc được của mọi lỗi (kể cả AggregateError)
+│   │       └── truncate.ts                # Cắt thông điệp lỗi trước khi lưu DB (last_error, failure_reason)
 │   ├── products/
 │   │   ├── products.module.ts
 │   │   ├── products.controller.ts

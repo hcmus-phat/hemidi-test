@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, type ConfigType } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { configModuleOptions, databaseConfig } from './config/configuration';
-import { buildTypeOrmOptions } from './database/typeorm.options';
+import { ConfigModule } from '@nestjs/config';
+import { configModuleOptions } from './config/configuration';
+import { DatabaseModule } from './database/database.module';
 import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
 import { QueueModule } from './queue/queue.module';
@@ -16,11 +15,7 @@ import { RedisConnectionRole } from './queue/redis-connection';
 @Module({
   imports: [
     ConfigModule.forRoot(configModuleOptions),
-    TypeOrmModule.forRootAsync({
-      inject: [databaseConfig.KEY],
-      useFactory: (db: ConfigType<typeof databaseConfig>) =>
-        buildTypeOrmOptions(db),
-    }),
+    DatabaseModule,
     QueueModule.forRoot(RedisConnectionRole.Api),
     ProductsModule,
     OrdersModule,
