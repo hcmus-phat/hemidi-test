@@ -28,6 +28,8 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Scripts in this folder run once, when the data volume is first created
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d mini_oms"]
       interval: 5s
@@ -37,7 +39,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: mini-oms-redis
-    # BullMQ yêu cầu noeviction: Redis không được tự xóa key của job
+    # BullMQ requires noeviction: Redis must never evict job keys
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
       - "6379:6379"
@@ -54,7 +56,7 @@ volumes:
   redisdata:
 ```
 
-> Để chạy integration test, tạo thêm DB `mini_oms_test`: `docker exec -it mini-oms-postgres createdb -U postgres mini_oms_test`.
+> DB `mini_oms_test` cho integration test được tạo tự động bởi `docker/postgres/init/01-create-test-db.sql` khi volume `pgdata` được khởi tạo lần đầu. Nếu volume đã tồn tại từ trước khi có script này, tạo thủ công: `docker exec -it mini-oms-postgres createdb -U postgres mini_oms_test` (hoặc `docker compose down -v` để khởi tạo lại, mất dữ liệu dev).
 
 ### 2.3 Các bước
 
