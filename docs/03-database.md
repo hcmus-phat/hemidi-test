@@ -326,8 +326,8 @@ Quyết định: [ADR-007](10-technical-decisions.md#adr-007-kiểu-dữ-liệu-
 |---|---|---|
 | 1 | `CreateProducts` | Bảng `products`, CHECK, partial unique index SKU, các index |
 | 2 | `CreateOrders` | Enum `order_status`, bảng `orders`, `order_items`, FK, CHECK, index |
-| 3 | `CreateNotificationLogs` | Bảng `notification_logs`, unique `(order_id, type)` |
-| 4 | `CreateOutboxEvents` | Bảng `outbox_events`, unique `(aggregate_id, event_type)`, partial index cho sự kiện chưa đẩy |
+| 3 | `CreateOutboxEvents` | Bảng `outbox_events`, unique `(aggregate_id, event_type)`, partial index cho sự kiện chưa đẩy |
+| 4 | `CreateNotificationLogs` | Bảng `notification_logs`, unique `(order_id, type)` |
 | 5 *(tùy chọn, xem [ADR-028](10-technical-decisions.md#adr-028-phạm-vi-bổ-sung))* | `AddProductNameTrgmIndex` | `CREATE EXTENSION IF NOT EXISTS pg_trgm` và GIN index. Viết tay vì TypeORM không generate được extension |
 
 Script npm (chi tiết ở [08 §2](08-deployment.md#2-chạy-local)):

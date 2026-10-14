@@ -122,7 +122,7 @@ flowchart LR
 │   │   ├── outbox.module.ts
 │   │   ├── outbox.repository.ts           # add, claimBatch (SKIP LOCKED), markPublished, markFailed, findByAggregate
 │   │   ├── outbox-relay.service.ts        # Vòng lặp relay, chỉ có trong WorkerModule
-│   │   ├── outbox-event-type.enum.ts
+│   │   ├── outbox-event-type.enum.ts      # OutboxEventType, OutboxAggregateType, payload ORDER_CREATED
 │   │   └── entities/outbox-event.entity.ts
 │   ├── queue/
 │   │   ├── queue.module.ts                # BullModule.forRootAsync + registerQueue + producer
