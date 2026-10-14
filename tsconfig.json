@@ -6,6 +6,7 @@
     "lib": ["ES2023"],
     "types": ["node", "jest"],
     "outDir": "./dist",
+    "rootDir": ".",
     "sourceMap": true,
     "removeComments": true,
     "esModuleInterop": true,

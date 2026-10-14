@@ -253,7 +253,13 @@ EXPIRE_BATCH_SIZE=100
 SWAGGER_ENABLED=true
 ```
 
-Quy tắc validate env: `JOB_FAILURE_RATE ∈ [0, 1]`, `JOB_ATTEMPTS ≥ 1`, `JOB_PROCESSING_MIN_MS ≤ JOB_PROCESSING_MAX_MS`, các giá trị số là số nguyên dương, `DATABASE_URL` và `REDIS_URL` là URL hợp lệ.
+Quy tắc validate env: `JOB_FAILURE_RATE ∈ [0, 1]`, `JOB_ATTEMPTS ≥ 1`, `JOB_PROCESSING_MIN_MS ≤ JOB_PROCESSING_MAX_MS`, `OUTBOX_POLL_INTERVAL_MS ≤ OUTBOX_MAX_BACKOFF_MS`, các giá trị số là số nguyên dương, `DATABASE_URL` (`postgres://`/`postgresql://`) và `REDIS_URL` (`redis://`/`rediss://`) là URL hợp lệ.
+
+Cách hiện thực (`src/config/`):
+
+- `env.validation.ts`: class `EnvironmentVariables` (class-validator) và hàm `validateEnv()`. Giá trị env luôn là chuỗi: chuỗi số được đổi sang số, chỉ chấp nhận `true`/`false` cho kiểu boolean, chuỗi rỗng bị coi là sai. Lỗi liệt kê **mọi** biến sai trong một thông báo.
+- `DATABASE_URL` và `REDIS_URL` **bắt buộc**, không có giá trị mặc định: thiếu thì dừng ngay, tránh việc bản deploy âm thầm kết nối tới `localhost`. Các biến còn lại nếu không khai báo sẽ lấy giá trị ở cột "Mặc định (dev)".
+- `configuration.ts`: các namespace có kiểu (`registerAs`): `app`, `database`, `redis`, `jobs`, `outbox`, `worker`, `orders`, `swagger`. Inject bằng `@Inject(databaseConfig.KEY) config: ConfigType<typeof databaseConfig>`. `ConfigModule.forRoot` dùng chung một bộ option cho API và worker, biến môi trường thật luôn được ưu tiên hơn file `.env`.
 
 **Kết nối Redis:**
 
