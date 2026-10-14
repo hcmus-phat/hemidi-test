@@ -95,6 +95,7 @@ npm run start:worker:dev              # Worker: xem log xử lý job
 | `migration:run:prod` | `typeorm -d dist/database/data-source.js migration:run` | Chạy migration từ code đã build |
 | `seed` | `ts-node src/database/seed.ts` | Dữ liệu mẫu |
 | `job:expire-now` | `ts-node src/scripts/expire-now.ts` | Gọi `expireStaleOrders()` một lần, dùng cho MT-09 |
+| `job:requeue` | `ts-node src/scripts/requeue-order.ts` | `npm run job:requeue -- <orderId>`: xóa job `order-<id>` rồi đẩy lại, dùng cho MT-08 |
 | `test` / `test:e2e` / `test:cov` | Jest | Xem [07](07-testing.md) |
 
 ## 3. Kiến trúc production

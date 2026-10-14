@@ -88,6 +88,21 @@ export class OrderQueueProducer {
   }
 
   /**
+   * Removes the job of an order from Redis (dev tooling, MT-08). Returns
+   * false when BullMQ could not remove it because a worker is processing it.
+   *
+   * @throws when Redis fails or does not answer within REDIS_OPERATION_TIMEOUT_MS
+   */
+  async removeOrderJob(orderId: string): Promise<boolean> {
+    const removed = await withTimeout(
+      this.queue.remove(buildOrderJobId(orderId)),
+      REDIS_OPERATION_TIMEOUT_MS,
+      `Redis did not answer within ${REDIS_OPERATION_TIMEOUT_MS} ms`,
+    );
+    return removed === 1;
+  }
+
+  /**
    * The jobs of an order: an array (at most one job today) so that other
    * kinds of jobs can be added later without changing the API. Empty when
    * the relay has not published the order yet, or when BullMQ already removed

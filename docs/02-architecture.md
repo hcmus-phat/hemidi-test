@@ -140,6 +140,8 @@ flowchart LR
 │   │   ├── order-processing.processor.ts  # WorkerHost, chỉ có trong WorkerModule; đặt concurrency, đóng Worker ở onModuleDestroy
 │   │   ├── order-jobs.scheduler.ts        # upsertJobScheduler khi worker khởi động
 │   │   └── failure-simulator.ts           # maybeFail(): ném SimulatedFailureError với xác suất JOB_FAILURE_RATE (RANDOM_SOURCE)
+│   ├── scripts/                           # Lệnh dev chạy bằng ts-node, dùng AppModule (không có worker/relay)
+│   │   └── requeue-order.ts               # npm run job:requeue -- <orderId>: xóa rồi đẩy lại job order-<id> (MT-08)
 │   └── health/
 │       └── health.controller.ts           # GET /health
 ├── test/

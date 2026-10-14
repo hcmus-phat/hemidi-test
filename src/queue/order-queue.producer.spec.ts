@@ -12,7 +12,12 @@ describe('OrderQueueProducer', () => {
   const ORDER_ID = '99999999-9999-4999-8999-999999999999';
   const JOB_ID = `order-${ORDER_ID}`;
 
-  const queue = { on: jest.fn(), add: jest.fn(), getJob: jest.fn() };
+  const queue = {
+    on: jest.fn(),
+    add: jest.fn(),
+    getJob: jest.fn(),
+    remove: jest.fn(),
+  };
   let producer: OrderQueueProducer;
 
   beforeEach(async () => {
@@ -78,6 +83,21 @@ describe('OrderQueueProducer', () => {
       jest.advanceTimersByTime(REDIS_OPERATION_TIMEOUT_MS);
 
       await expect(result).rejects.toThrow(TimeoutError);
+    });
+  });
+
+  describe('removeOrderJob', () => {
+    it('removes the job of the order by its fixed id', async () => {
+      queue.remove.mockResolvedValue(1);
+
+      await expect(producer.removeOrderJob(ORDER_ID)).resolves.toBe(true);
+      expect(queue.remove).toHaveBeenCalledWith(JOB_ID);
+    });
+
+    it('returns false when BullMQ could not remove it (job locked by a worker)', async () => {
+      queue.remove.mockResolvedValue(0);
+
+      await expect(producer.removeOrderJob(ORDER_ID)).resolves.toBe(false);
     });
   });
 

@@ -168,6 +168,17 @@ describe('OrdersService', () => {
 
 Processor được test bằng cách inject `FailureSimulator` và `sleeper` giả: `{ maybeFail: jest.fn() }`, `{ sleep: jest.fn().mockResolvedValue(undefined) }`. Job giả lập là một object `{ name, data: { orderId }, attemptsMade, opts: { attempts: 4 } }`. Relay được test bằng mock `outboxRepo` (`claimBatch`, `markPublished`, `markFailed`), mock `orderQueue.enqueueProcessOrder` và `dataSource.transaction` như ở §3.
 
+Code thật:
+
+| File | Nội dung |
+|---|---|
+| `src/orders/orders.service.spec.ts` | UT-01..UT-06. Thêm: `confirmOrder` ghi thông báo sau CAS và trong cùng transaction, `failOrder` cắt `failure_reason` dài, `getOrderJobs` (`404` không đọc Redis, lỗi Redis thành `503`) |
+| `src/queue/order-processing.processor.spec.ts` | UT-07 (với `CONFIRMED`, `CANCELLED`, `FAILED`), UT-08, UT-09. Thêm: thời gian xử lý nằm trong `[MIN, MAX]`, CAS thua sau khi sleep thì `skipped`, đơn không tồn tại thì `UnrecoverableError` (không sleep, không `failOrder`), tên job lạ thì `UnrecoverableError`, lỗi DB ở lần cuối cũng gọi `failOrder`, `failOrder` lỗi thì vẫn ném lỗi gốc, 4 lần thử chỉ bù trừ 1 lần, `concurrency` lấy từ config, `worker.close()` khi module bị hủy, bảng `isFinalAttempt` |
+| `src/outbox/outbox-relay.service.spec.ts` | UT-11, UT-12. Thêm: payload sai thì `markFailed` và đi tiếp, chu kỳ quét (Jest fake timers): quét ngay khi khởi động rồi mỗi `OUTBOX_POLL_INTERVAL_MS`, giãn 2s → 4s → 5s (trần) khi lỗi và quay về chu kỳ thường sau khi thành công, lô đầy thì quét lại sau 1ms (`setTimeout(0)` gọi từ một timer chạy sau 1ms), dừng thì không quét nữa, `onModuleDestroy` chờ lô đang chạy |
+| `src/queue/order-queue.producer.spec.ts`, `redis-connection.spec.ts`, `failure-simulator.spec.ts` | Option của job (`jobId`, `attempts`, `backoff`, `removeOn*`), timeout Redis, parse `REDIS_URL`, option kết nối theo vai trò, xác suất lỗi giả lập |
+
+Các processor và relay được tạo trực tiếp bằng `new` với các dependency giả. `Logger` của Nest được `jest.spyOn(...).mockImplementation()` để output test gọn.
+
 ## 5. Integration test và test đồng thời
 
 **Môi trường:** Postgres và Redis từ `docker-compose`. Dùng DB riêng `mini_oms_test` (`DATABASE_URL` trong `.env.test`). `globalSetup` chạy migration. `beforeEach` chạy `TRUNCATE order_items, notification_logs, orders, products RESTART IDENTITY CASCADE`.
@@ -198,7 +209,7 @@ Chạy API và worker local ([08 §2](08-deployment.md#2-chạy-local)), thao t�
 | MT-05 | `JOB_FAILURE_RATE=0.3`. Tạo khoảng 10 đơn, theo dõi `/jobs` và log worker | Có đơn bị retry (`state = delayed`, `failedReason` có giá trị) nhưng cuối cùng vẫn `CONFIRMED`. Khoảng cách giữa các lần retry khoảng 2s, 4s, 8s. Với `JOB_FAILURE_RATE=0` thì mọi đơn đều `CONFIRMED` ngay lần đầu |
 | MT-06 | Hủy một đơn `PENDING` và một đơn `CONFIRMED`. Hủy lại lần nữa | `200` và kho được hoàn trong cả hai trường hợp. Lần hủy thứ 2 trả `409 INVALID_ORDER_STATUS` |
 | MT-07 | Hủy đơn `FAILED`. `GET /orders/<uuid-không-tồn-tại>`. `GET /orders/abc` | `409`, `404 ORDER_NOT_FOUND`, `400 VALIDATION_ERROR` |
-| MT-08 | Với một đơn đã `CONFIRMED`: xóa job cũ và đẩy lại job `order-<id>` bằng script dev (hoặc qua Redis CLI / Bull Board) | Job `completed` với `returnValue.skipped = true`. Số dòng `notification_logs` của đơn vẫn là 1 |
+| MT-08 | Với một đơn đã `CONFIRMED` (worker đang chạy): `npm run job:requeue -- <orderId>` (xóa job `order-<id>` rồi đẩy lại), rồi `GET /orders/:id/jobs` | Job `completed` với `returnValue = { skipped: true, reason: 'Order is CONFIRMED' }`. Số dòng `notification_logs` của đơn vẫn là 1 |
 | MT-09 | Tắt worker. Tạo đơn (sự kiện outbox chưa được đẩy). Chạy `UPDATE orders SET created_at = now() - interval '31 minutes' WHERE id = '<id>'`. Chạy `npm run job:expire-now`. Bật worker lại | Đơn `CANCELLED`, `cancelReason = EXPIRED`, kho đã hoàn. Khi worker bật lại, relay đẩy job, và job `process-order` của đơn này bị bỏ qua (`skipped`) |
 | MT-10 | Trên bản deploy: mở `/api/docs`, gọi vài endpoint, gọi `/health`, tạo đơn và chờ `CONFIRMED` | Swagger hiển thị đủ. Lỗi trả đúng định dạng. Worker trên Railway đẩy và xử lý được job của đơn tạo qua API trên Vercel |
 | MT-11 | `docker compose stop redis`. Tạo đơn. Kiểm tra `outbox_events`. `docker compose start redis`, chờ vài giây | `POST /orders` vẫn `201`. Sự kiện có `published_at IS NULL`, `publish_attempts` tăng dần, có `last_error`. Log worker cho thấy chu kỳ quét giãn dần. Sau khi Redis chạy lại: sự kiện được đẩy, đơn chuyển `CONFIRMED` |

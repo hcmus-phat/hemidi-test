@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ordersConfig } from '../config/configuration';
+import { NotificationType } from '../notifications/notification-type.enum';
 import { NotificationsRepository } from '../notifications/notifications.repository';
 import {
   OutboxAggregateType,
@@ -15,7 +16,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { CancelReason, OrderStatus } from './order-status.enum';
 import { OrdersRepository } from './orders.repository';
-import { OrdersService } from './orders.service';
+import { MAX_FAILURE_REASON_LENGTH, OrdersService } from './orders.service';
 
 /**
  * Unit tests of the order business rules (docs/07 §2–§4). Repositories are
@@ -457,6 +458,123 @@ describe('OrdersService', () => {
       expect(error.getStatus()).toBe(404);
       expect(stockRepo.incrementStock).not.toHaveBeenCalled();
       expect(committed).toBe(false);
+    });
+  });
+
+  describe('worker transitions (UT-06)', () => {
+    const confirmedRow = {
+      id: ORDER_ID,
+      status: OrderStatus.CONFIRMED,
+      customerEmail: 'a@example.com',
+      totalAmount: 548000,
+    };
+
+    it('getStatus reads the current status outside a transaction', async () => {
+      ordersRepo.findStatus.mockResolvedValue(OrderStatus.PENDING);
+
+      await expect(service.getStatus(ORDER_ID)).resolves.toBe(
+        OrderStatus.PENDING,
+      );
+      expect(ordersRepo.findStatus).toHaveBeenCalledWith(
+        defaultManager,
+        ORDER_ID,
+      );
+    });
+
+    it('confirmOrder moves PENDING to CONFIRMED and records one ORDER_CONFIRMED notification in the same transaction', async () => {
+      ordersRepo.transitionStatus.mockResolvedValue(confirmedRow);
+      notificationsRepo.insertIfAbsent.mockResolvedValue(true);
+
+      await expect(service.confirmOrder(ORDER_ID)).resolves.toBe(true);
+
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(ordersRepo.transitionStatus).toHaveBeenCalledWith(
+        manager,
+        ORDER_ID,
+        [OrderStatus.PENDING],
+        OrderStatus.CONFIRMED,
+      );
+      expect(notificationsRepo.insertIfAbsent).toHaveBeenCalledTimes(1);
+      expect(notificationsRepo.insertIfAbsent).toHaveBeenCalledWith(manager, {
+        orderId: ORDER_ID,
+        type: NotificationType.ORDER_CONFIRMED,
+        recipient: 'a@example.com',
+        subject: `Order ${ORDER_ID} confirmed`,
+        payload: { orderId: ORDER_ID, totalAmount: 548000 },
+      });
+      expect(
+        ordersRepo.transitionStatus.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        notificationsRepo.insertIfAbsent.mock.invocationCallOrder[0],
+      );
+      expect(committed).toBe(true);
+    });
+
+    it('UT-06 confirmOrder writes nothing and returns false when the order is no longer PENDING', async () => {
+      ordersRepo.transitionStatus.mockResolvedValue(null);
+
+      await expect(service.confirmOrder(ORDER_ID)).resolves.toBe(false);
+
+      expect(notificationsRepo.insertIfAbsent).not.toHaveBeenCalled();
+      expect(stockRepo.incrementStock).not.toHaveBeenCalled();
+    });
+
+    it('failOrder moves PENDING to FAILED with the reason and releases the stock of every item, in one transaction', async () => {
+      ordersRepo.transitionStatus.mockResolvedValue({
+        ...confirmedRow,
+        status: OrderStatus.FAILED,
+      });
+      ordersRepo.findItemsForRelease.mockResolvedValue([
+        { productId: P1, quantity: 2 },
+        { productId: P2, quantity: 1 },
+      ]);
+
+      await expect(
+        service.failOrder(ORDER_ID, 'Simulated random processing failure'),
+      ).resolves.toBe(true);
+
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(ordersRepo.transitionStatus).toHaveBeenCalledWith(
+        manager,
+        ORDER_ID,
+        [OrderStatus.PENDING],
+        OrderStatus.FAILED,
+        { failureReason: 'Simulated random processing failure' },
+      );
+      expect(stockRepo.incrementStock).toHaveBeenNthCalledWith(
+        1,
+        manager,
+        P1,
+        2,
+      );
+      expect(stockRepo.incrementStock).toHaveBeenNthCalledWith(
+        2,
+        manager,
+        P2,
+        1,
+      );
+      expect(committed).toBe(true);
+    });
+
+    it('UT-06 failOrder releases no stock and returns false when the order is no longer PENDING', async () => {
+      // e.g. the customer cancelled it meanwhile, which already gave the stock back.
+      ordersRepo.transitionStatus.mockResolvedValue(null);
+
+      await expect(service.failOrder(ORDER_ID, 'boom')).resolves.toBe(false);
+
+      expect(ordersRepo.findItemsForRelease).not.toHaveBeenCalled();
+      expect(stockRepo.incrementStock).not.toHaveBeenCalled();
+    });
+
+    it('failOrder cuts a long reason to MAX_FAILURE_REASON_LENGTH characters', async () => {
+      ordersRepo.transitionStatus.mockResolvedValue(null);
+
+      await service.failOrder(ORDER_ID, 'x'.repeat(5000));
+
+      const patch = ordersRepo.transitionStatus.mock.calls[0][4] as {
+        failureReason: string;
+      };
+      expect(patch.failureReason).toHaveLength(MAX_FAILURE_REASON_LENGTH);
     });
   });
 
