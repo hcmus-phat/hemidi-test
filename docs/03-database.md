@@ -148,7 +148,7 @@ Bảng Transactional Outbox ([ADR-003](10-technical-decisions.md#adr-003-đẩy-
 |---|---|---|---|---|
 | `id` | `bigint` | ✗ | `GENERATED ALWAYS AS IDENTITY` | `pk_outbox_events`. Tăng dần, relay quét theo thứ tự ghi |
 | `aggregate_type` | `varchar(32)` | ✗ | | `ORDER` |
-| `aggregate_id` | `uuid` | ✗ | | `orderId`. **Không** đặt FK để bảng outbox độc lập với vòng đời của aggregate |
+| `aggregate_id` | `uuid` | ✗ | | `orderId`. **Không** đặt FK để bảng outbox độc lập với vòng đời của aggregate. Relay lấy id đơn từ cột này (Postgres bảo đảm là UUID hợp lệ), không đọc `payload` |
 | `event_type` | `varchar(64)` | ✗ | | `ORDER_CREATED` |
 | `payload` | `jsonb` | ✗ | | `{ "orderId": "…" }` |
 | `created_at` | `timestamptz` | ✗ | `now()` | |

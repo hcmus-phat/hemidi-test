@@ -38,7 +38,11 @@ export class OutboxEvent {
   @Column({ name: 'aggregate_type', type: 'varchar', length: 32 })
   aggregateType: OutboxAggregateType;
 
-  /** Id of the order. No FK on purpose (docs/03 §2.5). */
+  /**
+   * Id of the order. No FK on purpose (docs/03 §2.5). The relay reads the
+   * order id from here, not from `payload`: the column type makes Postgres
+   * reject anything that is not a UUID.
+   */
   @Column({ name: 'aggregate_id', type: 'uuid' })
   aggregateId: string;
 

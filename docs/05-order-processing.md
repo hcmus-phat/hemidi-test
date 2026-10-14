@@ -205,7 +205,7 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
       let published = 0;
       for (const event of events) {
         try {
-          await this.orderQueue.enqueueProcessOrder(event.payload.orderId); // jobId cố định: đẩy trùng là no-op
+          await this.orderQueue.enqueueProcessOrder(event.aggregateId); // jobId cố định: đẩy trùng là no-op
           await this.outboxRepo.markPublished(manager, event.id);
           published++;
         } catch (err) {
@@ -222,7 +222,7 @@ export class OutboxRelayService implements OnApplicationBootstrap, OnModuleDestr
 Code thật (`src/outbox/outbox-relay.service.ts`, `src/outbox/outbox.repository.ts`) khác mẫu ở vài điểm:
 
 - **Dừng gọn:** `onModuleDestroy` đặt cờ dừng, hủy timer rồi **chờ lô đang chạy commit xong**. Hook này chạy trước `onApplicationShutdown`, nơi Nest đóng DataSource và kết nối Redis, nên lô không bị cắt ngang giữa chừng. Sau khi dừng, `schedule()` không đặt timer mới.
-- **Payload sai:** nếu `payload.orderId` không phải UUID, sự kiện bị `markFailed` với lý do `Invalid ORDER_CREATED payload: …` và relay đi tiếp sang sự kiện sau. Lỗi này không phải lỗi Redis nên không làm giãn chu kỳ quét, cũng không làm dừng lô.
+- **Id đơn lấy từ `aggregate_id`, không từ `payload`:** cột `aggregate_id` có kiểu `uuid NOT NULL` nên Postgres bảo đảm mọi dòng có id đơn hợp lệ, còn `payload` là `jsonb` mà DB không kiểm tra. Nếu relay đọc `payload.orderId`, một sự kiện có payload sai sẽ không bao giờ đẩy được (*poison message*): nó vẫn `published_at IS NULL`, bị lấy lại ở đầu mọi lô (`ORDER BY id`), tăng `publish_attempts` và ghi log mỗi giây, và `OUTBOX_BATCH_SIZE` dòng như vậy sẽ chặn hết các sự kiện phía sau. Lấy từ `aggregate_id` thì mọi sự kiện đều đẩy được, nên chỉ còn lỗi Redis làm việc đẩy thất bại, và lỗi đó ảnh hưởng mọi sự kiện như nhau (dừng lô, giãn chu kỳ). Đây cũng là cột mà `GET /orders/:id/jobs` dùng để tìm sự kiện (`findByAggregate`). Nếu đơn của `aggregate_id` không tồn tại, job vẫn được đẩy và processor kết thúc nó bằng `UnrecoverableError` (§5), không chặn gì.
 - **Đếm lần thử:** `markPublished` đặt `published_at = now()` (đồng hồ DB) **và** tăng `publish_attempts`, nên một sự kiện đẩy được ngay có `publishAttempts = 1` ([04 §4.6](04-api-spec.md#46-get-ordersidjobs)). `last_error` được giữ lại sau khi đẩy thành công, để biết vì sao sự kiện bị trễ. `markFailed` cắt `last_error` còn tối đa 1000 ký tự.
 - **Timeout:** `enqueueProcessOrder` có timeout 3s (§4.1). Khi Redis tắt, `last_error` thường là `Redis did not answer within 3000 ms`, log `WARN` của queue ghi lỗi gốc (ví dụ `connect ECONNREFUSED`).
 - **Log:** `Outbox relay started (…)`, `Published N outbox event(s)` khi có sự kiện được đẩy, và `Outbox relay: next poll in N ms` mỗi lần giãn chu kỳ (2s, 4s, 8s, 16s, 30s).

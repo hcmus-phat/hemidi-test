@@ -88,7 +88,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Quyết định:** Phương án 3.
   - Transaction tạo đơn insert thêm một dòng `outbox_events` (`event_type = ORDER_CREATED`, `payload = { orderId }`). Đơn và sự kiện cùng commit hoặc cùng rollback.
   - `POST /orders` **không gọi Redis**.
-  - `OutboxRelayService` chạy trong worker, quét mỗi `OUTBOX_POLL_INTERVAL_MS` (1000ms): `SELECT … WHERE published_at IS NULL ORDER BY id LIMIT n FOR UPDATE SKIP LOCKED`. Với từng sự kiện, gọi `queue.add('process-order', …, { jobId: order-{orderId} })` rồi đặt `published_at`. Nếu lỗi, tăng `publish_attempts`, ghi `last_error`, dừng lô hiện tại và giãn chu kỳ quét (tối đa `OUTBOX_MAX_BACKOFF_MS`).
+  - `OutboxRelayService` chạy trong worker, quét mỗi `OUTBOX_POLL_INTERVAL_MS` (1000ms): `SELECT … WHERE published_at IS NULL ORDER BY id LIMIT n FOR UPDATE SKIP LOCKED`. Với từng sự kiện, gọi `queue.add('process-order', …, { jobId: order-{orderId} })` rồi đặt `published_at`. `orderId` lấy từ cột `aggregate_id` (`uuid NOT NULL`, Postgres bảo đảm hợp lệ), không từ `payload`, để không có sự kiện nào không đẩy được và chặn các sự kiện phía sau. Nếu lỗi, tăng `publish_attempts`, ghi `last_error`, dừng lô hiện tại và giãn chu kỳ quét (tối đa `OUTBOX_MAX_BACKOFF_MS`).
 - **Lý do:** Không bao giờ mất job. Tạo đơn không phụ thuộc Redis. Đây là cách xử lý lỗi chuẩn mực, đúng với tiêu chí "xử lý lỗi/retry" được chấm điểm cao.
 - **Hệ quả:**
   - Có thêm bảng `outbox_events`, `OutboxRepository` và `OutboxRelayService` (worker), cùng 3 biến env.
@@ -291,6 +291,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-003: relay lấy `orderId` từ `aggregate_id` thay vì `payload.orderId`. Payload `jsonb` không được DB kiểm tra, một sự kiện có payload sai sẽ bị lấy lại ở đầu mọi lô và có thể chặn các sự kiện phía sau |
 | 2026-10-15 | ADR-029: ghi nhận BullMQ 6 cần cài `ioredis` riêng (chọn 5.x vì peer của TypeORM 1.1), connection options riêng cho API và worker, ngữ nghĩa `attemptsMade` và công thức backoff đã kiểm tra trong mã nguồn BullMQ |
 | 2026-10-15 | ADR-014: ghi nhận cách đặt `lock_timeout` trong code: `SELECT set_config('lock_timeout', $1, true)`, dạng có tham số của `SET LOCAL` |
 | 2026-10-14 | ADR-029: ghi nhận Nest CLI (dev-only) cần Node ≥ 22.22.3, nên `npm ci` cảnh báo `EBADENGINE` trên 22.13–22.22. `engines.node` giữ `>=22.13` cho runtime |

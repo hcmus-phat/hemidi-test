@@ -6,12 +6,10 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { isUUID } from 'class-validator';
 import { DataSource } from 'typeorm';
 import { errorMessage } from '../common/utils/error-message';
 import { outboxConfig } from '../config/configuration';
 import { OrderQueueProducer } from '../queue/order-queue.producer';
-import { OutboxEvent } from './entities/outbox-event.entity';
 import { OutboxRepository } from './outbox.repository';
 
 /** Outcome of one batch. `failed` means Redis (or the database) failed. */
@@ -32,9 +30,13 @@ export interface RelayBatchResult {
  * That is harmless because the job id is fixed (`order-{orderId}`) and
  * BullMQ ignores an add whose id already exists (ADR-016).
  *
- * When Redis fails, the batch stops at the failing event, which records the
- * error, and the next poll waits twice as long (up to OUTBOX_MAX_BACKOFF_MS).
- * A full batch means more events are waiting: the next poll starts at once.
+ * The order id of an event is its aggregate_id, which the database keeps a
+ * valid UUID, so every claimed event can become a job: no event can be stuck
+ * at the head of the queue and block the ones behind it. Publishing fails
+ * only when Redis does, which affects every event alike: the batch stops at
+ * the failing event, which records the error, and the next poll waits twice
+ * as long (up to OUTBOX_MAX_BACKOFF_MS). A full batch means more events are
+ * waiting: the next poll starts at once.
  */
 @Injectable()
 export class OutboxRelayService
@@ -89,16 +91,11 @@ export class OutboxRelayService
       );
       let published = 0;
       for (const event of events) {
-        const orderId = this.orderIdOf(event);
-        if (orderId === null) {
-          // Cannot be published, ever. Record it and go on with the others;
-          // retrying it is pointless but harmless.
-          const error = `Invalid ${event.eventType} payload: ${JSON.stringify(event.payload)}`;
-          await this.outboxRepo.markFailed(manager, event.id, error);
-          this.logger.error(`Outbox event ${event.id} skipped: ${error}`);
-          continue;
-        }
-
+        // aggregate_id is `uuid NOT NULL`, so Postgres guarantees a valid
+        // order id. The jsonb payload is not checked by the database: an event
+        // with a bad payload could never be published and would come back at
+        // the head of every batch.
+        const orderId = event.aggregateId;
         try {
           await this.orderQueue.enqueueProcessOrder(orderId);
         } catch (error) {
@@ -155,11 +152,5 @@ export class OutboxRelayService
     this.delayMs = this.config.pollIntervalMs;
     const batchWasFull = result.published === this.config.batchSize;
     this.schedule(batchWasFull ? 0 : this.delayMs);
-  }
-
-  /** The order id of an ORDER_CREATED event, or null when the payload is not valid. */
-  private orderIdOf(event: OutboxEvent): string | null {
-    const { orderId } = (event.payload ?? {}) as { orderId?: unknown };
-    return isUUID(orderId) ? (orderId as string) : null;
   }
 }

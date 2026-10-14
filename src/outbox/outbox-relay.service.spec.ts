@@ -30,8 +30,15 @@ describe('OutboxRelayService', () => {
 
   let relay: OutboxRelayService;
 
-  function event(id: string, payload: unknown): OutboxEvent {
-    return { id, eventType: 'ORDER_CREATED', payload } as OutboxEvent;
+  /** An ORDER_CREATED event as written by OrdersService.create. */
+  function event(id: string, orderId: string): OutboxEvent {
+    return {
+      id,
+      aggregateType: 'ORDER',
+      aggregateId: orderId,
+      eventType: 'ORDER_CREATED',
+      payload: { orderId },
+    } as OutboxEvent;
   }
 
   beforeEach(() => {
@@ -58,8 +65,8 @@ describe('OutboxRelayService', () => {
   describe('relayBatch', () => {
     it('UT-11 publishes every claimed event and marks each one published, in one transaction', async () => {
       outboxRepo.claimBatch.mockResolvedValue([
-        event('1', { orderId: ORDER_1 }),
-        event('2', { orderId: ORDER_2 }),
+        event('1', ORDER_1),
+        event('2', ORDER_2),
       ]);
 
       const result = await relay.relayBatch();
@@ -82,9 +89,7 @@ describe('OutboxRelayService', () => {
     });
 
     it('marks an event published only after its job was added', async () => {
-      outboxRepo.claimBatch.mockResolvedValue([
-        event('1', { orderId: ORDER_1 }),
-      ]);
+      outboxRepo.claimBatch.mockResolvedValue([event('1', ORDER_1)]);
 
       await relay.relayBatch();
 
@@ -95,9 +100,9 @@ describe('OutboxRelayService', () => {
 
     it('UT-12 stops the batch at the first event Redis rejects, and records the error on it', async () => {
       outboxRepo.claimBatch.mockResolvedValue([
-        event('1', { orderId: ORDER_1 }),
-        event('2', { orderId: ORDER_2 }),
-        event('3', { orderId: ORDER_3 }),
+        event('1', ORDER_1),
+        event('2', ORDER_2),
+        event('3', ORDER_3),
       ]);
       orderQueue.enqueueProcessOrder
         .mockResolvedValueOnce(undefined)
@@ -129,24 +134,24 @@ describe('OutboxRelayService', () => {
       ['an orderId that is not a UUID', { orderId: 'abc' }],
       ['no payload at all', null],
     ])(
-      'records an event with %s as failed and goes on with the next one',
+      'takes the order id from aggregate_id, so an event with %s in its payload is still published',
       async (_case, payload) => {
         outboxRepo.claimBatch.mockResolvedValue([
-          event('1', payload),
-          event('2', { orderId: ORDER_2 }),
+          { ...event('1', ORDER_1), payload } as OutboxEvent,
+          event('2', ORDER_2),
         ]);
 
         const result = await relay.relayBatch();
 
-        expect(result).toEqual({ published: 1, failed: false });
-        expect(outboxRepo.markFailed).toHaveBeenCalledWith(
-          manager,
-          '1',
-          expect.stringContaining('Invalid ORDER_CREATED payload'),
+        // A full batch, nothing left behind to block the next one.
+        expect(result).toEqual({ published: 2, failed: false });
+        expect(orderQueue.enqueueProcessOrder).toHaveBeenNthCalledWith(
+          1,
+          ORDER_1,
         );
-        expect(orderQueue.enqueueProcessOrder).toHaveBeenCalledTimes(1);
-        expect(orderQueue.enqueueProcessOrder).toHaveBeenCalledWith(ORDER_2);
+        expect(outboxRepo.markPublished).toHaveBeenCalledWith(manager, '1');
         expect(outboxRepo.markPublished).toHaveBeenCalledWith(manager, '2');
+        expect(outboxRepo.markFailed).not.toHaveBeenCalled();
       },
     );
 
