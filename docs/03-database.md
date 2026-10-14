@@ -346,7 +346,7 @@ Script npm (chi tiết ở [08 §2](08-deployment.md#2-chạy-local)):
 
 > Trên Windows, npm script không nhận `$NAME`, nên tên migration được truyền trực tiếp: `npm run migration:generate -- src/database/migrations/CreateOrders`.
 > Sau khi generate **phải đọc lại** migration: kiểm tra tên constraint, partial index và enum. Đây là code sẽ bị hỏi khi phỏng vấn.
-> Entity khai báo lại đúng tên constraint và index của migration (`@Check`, `@Index`, `primaryKeyConstraintName`). Index có `DESC` hoặc điều kiện phức tạp được đánh dấu `@Index(name, { synchronize: false })` để TypeORM bỏ qua. Kiểm tra entity khớp với DB bằng `npm run migration:generate -- src/database/migrations/DriftCheck --dr`: kết quả đúng là "No changes in database schema were found".
+> Entity khai báo lại đúng tên constraint và index của migration (`@Check`, `@Index`, `primaryKeyConstraintName`). Partial index chỉ có điều kiện `WHERE` (ví dụ `uq_products_sku_active`, `idx_products_price`) được khai báo đầy đủ bằng `@Index(name, columns, { where })`. Index có `DESC` hoặc điều kiện phức tạp mà `@Index` không mô tả được (ví dụ `idx_products_created_at`) được đánh dấu `@Index(name, { synchronize: false })` để TypeORM bỏ qua. Kiểm tra entity khớp với DB bằng `npm run migration:generate -- src/database/migrations/DriftCheck --dr`: kết quả đúng là "No changes in database schema were found".
 
 ## 8. Dữ liệu mẫu (seed, tùy chọn)
 

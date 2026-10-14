@@ -22,10 +22,10 @@ import { BigIntTransformer } from '../../common/transformers/bigint.transformer'
   unique: true,
   where: '"deleted_at" IS NULL',
 })
-// Partial indexes with DESC ordering cannot be described by @Index, so
-// TypeORM is told to leave them alone (they are owned by the migration).
+@Index('idx_products_price', ['price'], { where: '"deleted_at" IS NULL' })
+// @Index cannot describe the DESC column order of this index, so TypeORM is
+// told to leave it alone (the migration owns it).
 @Index('idx_products_created_at', { synchronize: false })
-@Index('idx_products_price', { synchronize: false })
 export class Product {
   @PrimaryGeneratedColumn('uuid', { primaryKeyConstraintName: 'pk_products' })
   id: string;
