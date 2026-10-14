@@ -364,9 +364,13 @@ Không có body. Chuyển `PENDING | CONFIRMED → CANCELLED` (`cancelReason = C
 
 | Status | Khi nào |
 |---|---|
-| 200 | Thành công. `jobs: []` nếu relay chưa đẩy (`dispatch.status = PENDING`) hoặc job đã bị dọn khỏi Redis (quá `JOB_KEEP_*_SECONDS`) |
-| 404 `ORDER_NOT_FOUND` | Đơn không tồn tại |
-| 503 `SERVICE_UNAVAILABLE` | Không kết nối được Redis |
+| 200 | Thành công. `jobs: []` nếu relay chưa đẩy (`dispatch.status = PENDING`) hoặc job đã bị dọn khỏi Redis (quá `JOB_KEEP_*_SECONDS`). `dispatch: null` nếu đơn không có sự kiện outbox |
+| 400 `VALIDATION_ERROR` | `id` không phải UUID |
+| 404 `ORDER_NOT_FOUND` | Đơn không tồn tại (không đọc Redis) |
+| 503 `SERVICE_UNAVAILABLE` | Redis lỗi hoặc không trả lời trong 3s. `message` cố định: `The job queue is unavailable, please retry`. Khi API đã từng kết nối được, lỗi trả về ngay (`enableOfflineQueue: false`). Khi API khởi động lúc Redis đang tắt, request chờ tối đa 3s ([02 §7](02-architecture.md#7-cấu-hình-biến-môi-trường)) |
+
+- `state` có thể là mọi state của BullMQ: `waiting`, `delayed`, `prioritized`, `waiting-children`, `active`, `completed`, `failed`, hoặc `unknown` (job vừa bị xóa giữa hai lần đọc).
+- Thời gian trong `dispatch` lấy từ đồng hồ Postgres (`published_at = now()`), thời gian trong `jobs` do BullMQ ghi bằng đồng hồ của tiến trình worker. Hai đồng hồ có thể lệch nhau (ví dụ máy ảo Docker lệch máy host vài giây), nên đừng so sánh chéo hai nhóm này.
 
 ### 4.7 `GET /health` *(SHOULD, xem [ADR-028](10-technical-decisions.md#adr-028-phạm-vi-bổ-sung))*
 

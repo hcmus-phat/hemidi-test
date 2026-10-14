@@ -19,6 +19,7 @@ import { ApiErrorResponse } from '../common/decorators/api-error-response.decora
 import { ErrorCode } from '../common/errors/error-codes';
 import { uuidParam } from '../common/pipes/uuid-param.pipe';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { OrderJobsResponseDto } from './dto/order-jobs-response.dto';
 import { OrderDetailDto, OrderSummaryDto } from './dto/order-response.dto';
 import { PaginatedOrdersDto } from './dto/paginated-orders.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
@@ -101,6 +102,35 @@ export class OrdersController {
     @Param('id', uuidParam('id')) id: string,
   ): Promise<OrderDetailDto> {
     return OrderDetailDto.fromEntity(await this.ordersService.findOne(id));
+  }
+
+  @Get(':id/jobs')
+  @ApiOperation({
+    summary: 'Get the processing job of an order',
+    description:
+      'Shows whether the order was handed to the queue (`dispatch`, from the outbox) and the state of its BullMQ job: attempts, last error, result. `jobs` is empty until the worker publishes the order, and after the finished job was removed from Redis.',
+  })
+  @ApiParam(ORDER_ID_PARAM)
+  @ApiOkResponse({ type: OrderJobsResponseDto })
+  @ApiErrorResponse(
+    HttpStatus.BAD_REQUEST,
+    ErrorCode.VALIDATION_ERROR,
+    'id is not a UUID',
+  )
+  @ApiErrorResponse(
+    HttpStatus.NOT_FOUND,
+    ErrorCode.ORDER_NOT_FOUND,
+    'Order does not exist',
+  )
+  @ApiErrorResponse(
+    HttpStatus.SERVICE_UNAVAILABLE,
+    ErrorCode.SERVICE_UNAVAILABLE,
+    'Redis is unreachable or did not answer in time; retry',
+  )
+  async findJobs(
+    @Param('id', uuidParam('id')) id: string,
+  ): Promise<OrderJobsResponseDto> {
+    return OrderJobsResponseDto.from(await this.ordersService.getOrderJobs(id));
   }
 
   @Patch(':id/cancel')

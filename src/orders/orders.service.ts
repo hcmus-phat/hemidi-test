@@ -1,8 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 import { paginate, Paginated } from '../common/dto/paginated-response.dto';
 import { getPaginationOffset } from '../common/dto/pagination-query.dto';
+import { errorMessage } from '../common/utils/error-message';
 import { truncate } from '../common/utils/truncate';
 import {
   AppException,
@@ -11,6 +12,7 @@ import {
 import { ordersConfig } from '../config/configuration';
 import { NotificationType } from '../notifications/notification-type.enum';
 import { NotificationsRepository } from '../notifications/notifications.repository';
+import { OutboxEvent } from '../outbox/entities/outbox-event.entity';
 import {
   OutboxAggregateType,
   OutboxEventType,
@@ -18,6 +20,10 @@ import {
 import { OutboxRepository } from '../outbox/outbox.repository';
 import { Product } from '../products/entities/product.entity';
 import { ProductStockRepository } from '../products/product-stock.repository';
+import {
+  OrderJobSnapshot,
+  OrderQueueProducer,
+} from '../queue/order-queue.producer';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { Order } from './entities/order.entity';
@@ -31,14 +37,26 @@ const CANCELLABLE_STATUSES = [OrderStatus.PENDING, OrderStatus.CONFIRMED];
 /** Longest failure reason kept in orders.failure_reason (a text column). */
 export const MAX_FAILURE_REASON_LENGTH = 1000;
 
+/** Where an order is in its background processing (GET /orders/:id/jobs). */
+export interface OrderJobs {
+  orderId: string;
+  orderStatus: OrderStatus;
+  /** The ORDER_CREATED outbox event, null if there is none. */
+  event: OutboxEvent | null;
+  jobs: OrderJobSnapshot[];
+}
+
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly ordersRepo: OrdersRepository,
     private readonly stockRepo: ProductStockRepository,
     private readonly outboxRepo: OutboxRepository,
     private readonly notificationsRepo: NotificationsRepository,
+    private readonly orderQueue: OrderQueueProducer,
     @Inject(ordersConfig.KEY)
     private readonly config: ConfigType<typeof ordersConfig>,
   ) {}
@@ -155,6 +173,40 @@ export class OrdersService {
     });
     // CANCELLED is final, so reading after the commit returns what was committed.
     return this.findOne(orderId);
+  }
+
+  /**
+   * The outbox event and the BullMQ job of an order (docs/05 §10):
+   *
+   * - 404 ORDER_NOT_FOUND when the order does not exist (Redis is not read).
+   * - The outbox event tells whether the relay has published the order yet.
+   * - The job comes from Redis. Any Redis error, including no answer within
+   *   3s, is a 503: the client should retry. Only this endpoint and /health
+   *   depend on Redis in the API.
+   */
+  async getOrderJobs(orderId: string): Promise<OrderJobs> {
+    const manager = this.dataSource.manager;
+    const orderStatus = await this.ordersRepo.findStatus(manager, orderId);
+    if (orderStatus === null) {
+      throw AppException.orderNotFound(orderId);
+    }
+
+    const event = await this.outboxRepo.findByAggregate(
+      manager,
+      orderId,
+      OutboxEventType.ORDER_CREATED,
+    );
+    const jobs = await this.orderQueue
+      .getOrderJobs(orderId)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Could not read the jobs of order ${orderId}: ${errorMessage(error)}`,
+        );
+        throw AppException.serviceUnavailable(
+          'The job queue is unavailable, please retry',
+        );
+      });
+    return { orderId, orderStatus, event, jobs };
   }
 
   /** Current status of an order, or null when it does not exist (read by the worker). */

@@ -150,7 +150,7 @@ describe('OrdersService', () => {
 
 > Tên provider cấu hình (`ordersConfig.KEY`) và chữ ký các hàm repository chỉ mang tính minh họa. Khi code thật, hãy giữ test khớp với chữ ký thực tế.
 >
-> Code thật: `src/orders/orders.service.spec.ts` (UT-01..UT-05, cùng `findAll`/`findOne`) và `src/orders/dto/create-order.dto.spec.ts` (validate `CreateOrderDto` qua `createValidationPipe()`: `productId` trùng kể cả khác hoa thường, `items` rỗng, giới hạn `quantity`, chuẩn hóa email). Ở giai đoạn 2, `OrdersService` chưa phụ thuộc `OrderQueueProducer`: testing module không đăng ký provider queue nào, nên ý "không gọi Redis" của UT-01 được bảo đảm ngay khi module compile được. Khi giai đoạn 3 thêm `OrderQueueProducer` (chỉ cho `getOrderJobs`), thêm lại assertion `enqueueProcessOrder` không được gọi.
+> Code thật: `src/orders/orders.service.spec.ts` (UT-01..UT-05, cùng `findAll`/`findOne`) và `src/orders/dto/create-order.dto.spec.ts` (validate `CreateOrderDto` qua `createValidationPipe()`: `productId` trùng kể cả khác hoa thường, `items` rỗng, giới hạn `quantity`, chuẩn hóa email). Từ giai đoạn 3, `OrdersService` nhận `OrderQueueProducer` (chỉ dùng `getOrderJobs` cho `GET /orders/:id/jobs`), nên UT-01 kiểm tra `enqueueProcessOrder` và `getOrderJobs` đều **không** được gọi khi tạo đơn. `getOrderJobs` của service có test riêng: `404` mà không đọc Redis, và lỗi Redis thành `503` với thông điệp cố định.
 
 ## 4. Unit test bổ sung (nên có)
 

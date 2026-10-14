@@ -559,6 +559,8 @@ async getOrderJobs(orderId: string): Promise<OrderJobDto[]> {
 }
 ```
 
+Code thật: `OrdersService.getOrderJobs` trả `{ orderId, orderStatus, event, jobs }` (entity `OutboxEvent`), controller chuyển sang `OrderJobsResponseDto` (`src/orders/dto/order-jobs-response.dto.ts`). Mọi lỗi khi đọc Redis (kể cả timeout 3s của `OrderQueueProducer`) được ghi log `WARN` rồi đổi thành `AppException.serviceUnavailable('The job queue is unavailable, please retry')`. `OutboxRepository.findByAggregate` nhận `EntityManager` như mọi repository khác ([02 §8](02-architecture.md#8-quy-ước-code)).
+
 - `dispatch` cho thấy giai đoạn "đã tạo đơn nhưng chưa vào queue". Khi Redis lỗi, `lastError` hiển thị lý do.
 - Trả `jobs` dạng **mảng** để sau này mở rộng thêm loại job khác cho cùng đơn mà không đổi API.
 - Thời gian giữ job (`JOB_KEEP_*_SECONDS`) đánh đổi giữa khả năng tra cứu và dung lượng Redis. Job đã bị dọn thì `jobs: []`, còn trạng thái đơn trong DB vẫn là nguồn sự thật.

@@ -10,6 +10,7 @@ import {
 } from '../outbox/outbox-event-type.enum';
 import { OutboxRepository } from '../outbox/outbox.repository';
 import { ProductStockRepository } from '../products/product-stock.repository';
+import { OrderQueueProducer } from '../queue/order-queue.producer';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { CancelReason, OrderStatus } from './order-status.enum';
@@ -56,16 +57,19 @@ describe('OrdersService', () => {
     findByIdWithItems: jest.fn(),
     findPage: jest.fn(),
   };
-  const outboxRepo = { add: jest.fn() };
+  const outboxRepo = { add: jest.fn(), findByAggregate: jest.fn() };
   const notificationsRepo = { insertIfAbsent: jest.fn() };
+  // The API only reads job states; placing an order must never enqueue.
+  const orderQueue = {
+    enqueueProcessOrder: jest.fn(),
+    getOrderJobs: jest.fn(),
+  };
 
   let service: OrdersService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     committed = false;
-    // No queue/Redis provider is registered: OrdersService has no way to reach
-    // Redis, which is what makes POST /orders independent of it (ADR-003).
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrdersService,
@@ -74,6 +78,7 @@ describe('OrdersService', () => {
         { provide: OrdersRepository, useValue: ordersRepo },
         { provide: OutboxRepository, useValue: outboxRepo },
         { provide: NotificationsRepository, useValue: notificationsRepo },
+        { provide: OrderQueueProducer, useValue: orderQueue },
         { provide: ordersConfig.KEY, useValue: { lockTimeoutMs: 5000 } },
       ],
     }).compile();
@@ -162,6 +167,9 @@ describe('OrdersService', () => {
         eventType: OutboxEventType.ORDER_CREATED,
         payload: { orderId: ORDER_ID },
       });
+      // POST /orders does not depend on Redis: the relay publishes the event (ADR-003).
+      expect(orderQueue.enqueueProcessOrder).not.toHaveBeenCalled();
+      expect(orderQueue.getOrderJobs).not.toHaveBeenCalled();
       expect(committed).toBe(true);
       expect(order.id).toBe(ORDER_ID);
       expect(order.status).toBe(OrderStatus.PENDING);
@@ -449,6 +457,73 @@ describe('OrdersService', () => {
       expect(error.getStatus()).toBe(404);
       expect(stockRepo.incrementStock).not.toHaveBeenCalled();
       expect(committed).toBe(false);
+    });
+  });
+
+  describe('getOrderJobs', () => {
+    const job = {
+      jobId: `order-${ORDER_ID}`,
+      name: 'process-order',
+      state: 'completed',
+      attemptsMade: 1,
+      maxAttempts: 4,
+      failedReason: null,
+      returnValue: { result: 'CONFIRMED' },
+      createdAt: '2026-10-14T03:15:00.900Z',
+      processedAt: '2026-10-14T03:15:01.000Z',
+      finishedAt: '2026-10-14T03:15:05.000Z',
+    };
+
+    it('returns the status, the outbox event and the jobs, read outside a transaction', async () => {
+      const event = { id: '7', publishedAt: new Date(), publishAttempts: 1 };
+      ordersRepo.findStatus.mockResolvedValue(OrderStatus.CONFIRMED);
+      outboxRepo.findByAggregate.mockResolvedValue(event);
+      orderQueue.getOrderJobs.mockResolvedValue([job]);
+
+      const result = await service.getOrderJobs(ORDER_ID);
+
+      expect(result).toEqual({
+        orderId: ORDER_ID,
+        orderStatus: OrderStatus.CONFIRMED,
+        event,
+        jobs: [job],
+      });
+      expect(ordersRepo.findStatus).toHaveBeenCalledWith(
+        defaultManager,
+        ORDER_ID,
+      );
+      expect(outboxRepo.findByAggregate).toHaveBeenCalledWith(
+        defaultManager,
+        ORDER_ID,
+        OutboxEventType.ORDER_CREATED,
+      );
+      expect(orderQueue.getOrderJobs).toHaveBeenCalledWith(ORDER_ID);
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 ORDER_NOT_FOUND without reading Redis when the order does not exist', async () => {
+      ordersRepo.findStatus.mockResolvedValue(null);
+
+      const error = await rejection(service.getOrderJobs(ORDER_ID));
+
+      expect(error.code).toBe(ErrorCode.ORDER_NOT_FOUND);
+      expect(error.getStatus()).toBe(404);
+      expect(orderQueue.getOrderJobs).not.toHaveBeenCalled();
+    });
+
+    it('throws 503 SERVICE_UNAVAILABLE when Redis fails or does not answer', async () => {
+      ordersRepo.findStatus.mockResolvedValue(OrderStatus.PENDING);
+      outboxRepo.findByAggregate.mockResolvedValue(null);
+      orderQueue.getOrderJobs.mockRejectedValue(
+        new Error('Redis did not answer within 3000 ms'),
+      );
+
+      const error = await rejection(service.getOrderJobs(ORDER_ID));
+
+      expect(error.code).toBe(ErrorCode.SERVICE_UNAVAILABLE);
+      expect(error.getStatus()).toBe(503);
+      // A fixed message telling the client to retry (ADR-011), not the Redis error.
+      expect(error.message).toBe('The job queue is unavailable, please retry');
     });
   });
 

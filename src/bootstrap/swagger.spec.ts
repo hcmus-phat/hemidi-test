@@ -64,6 +64,13 @@ describe('createSwaggerDocument', () => {
     expect(Object.keys(document.paths['/orders/{id}/cancel'])).toEqual([
       'patch',
     ]);
+    expect(Object.keys(document.paths['/orders/{id}/jobs'])).toEqual(['get']);
+  });
+
+  it('documents the 503 of GET /orders/{id}/jobs, when Redis is unreachable', () => {
+    expect(
+      Object.keys(document.paths['/orders/{id}/jobs'].get?.responses ?? {}),
+    ).toEqual(expect.arrayContaining(['200', '400', '404', '503']));
   });
 
   it('documents the status filter of GET /orders as an enum', () => {
@@ -98,6 +105,9 @@ describe('createSwaggerDocument', () => {
     ['OrderItemResponseDto', 'lineTotal'],
     ['OrderDetailDto', 'totalAmount'],
     ['OrderSummaryDto', 'totalAmount'],
+    ['OrderDispatchDto', 'publishAttempts'],
+    ['OrderJobDto', 'attemptsMade'],
+    ['OrderJobDto', 'maxAttempts'],
     ['PaginationMetaDto', 'page'],
     ['PaginationMetaDto', 'totalPages'],
     ['ErrorResponseDto', 'statusCode'],
