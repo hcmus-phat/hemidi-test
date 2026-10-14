@@ -43,7 +43,7 @@ flowchart LR
 
 | Hạng mục | Lựa chọn | Ghi chú |
 |---|---|---|
-| Runtime | Node.js 22 LTS (≥ 22.13) | TypeORM 1.x yêu cầu `^20.19 \|\| ^22.13 \|\| >=24.11`. NestJS 12 chỉ phát hành dạng ES module, còn dự án biên dịch ra CommonJS và dựa vào `require(esm)` có sẵn từ Node 22.12 ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
+| Runtime | Node.js 22 LTS (≥ 22.13) | TypeORM 1.x yêu cầu `^20.19 \|\| ^22.13 \|\| >=24.11`. NestJS 12 chỉ phát hành dạng ES module, còn dự án biên dịch ra CommonJS và dựa vào `require(esm)` có sẵn từ Node 22.12 ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)). Nest CLI (dev-only) khai báo Node ≥ 22.22.3, trên bản cũ hơn `npm ci` chỉ in cảnh báo `EBADENGINE` ([08 §2.1](08-deployment.md#21-yêu-cầu)) |
 | Framework | NestJS 12 | `@nestjs/config`, `@nestjs/typeorm`, `@nestjs/bullmq`, `@nestjs/swagger` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
 | ORM | TypeORM 1.x | `synchronize: false`, migration bằng TypeORM CLI |
 | DB | PostgreSQL 16 (local), Neon (production) | `gen_random_uuid()` có sẵn từ PG13 |

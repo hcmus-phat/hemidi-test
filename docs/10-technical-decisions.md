@@ -275,6 +275,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Hệ quả:** API thay đổi giữa các major (TypeORM 0.3 → 1.x, BullMQ 5 → 6) phải được kiểm tra trên type definitions và CHANGELOG của gói đã cài, không dựa vào trí nhớ. Code mẫu trong tài liệu 02–07 chỉ mang tính minh họa. Với `attemptsMade` và job scheduler, hành vi thực tế được kiểm chứng bằng test (MT-04, UT-08/09).
 - **Ghi nhận khi scaffold (NestJS 12):**
   - Các gói `@nestjs/*` 12 chỉ phát hành dạng **ES module** (`"type": "module"`). Dự án vẫn biên dịch ra **CommonJS** (`module: nodenext`, `package.json` không có `"type"`), vì TypeORM CLI (`typeorm-ts-node-commonjs`), handler Vercel (`require('../dist/vercel')`) và Jest đều làm việc với CommonJS. Lúc chạy, Node ≥ 22.12 `require()` được ES module (`require(esm)`), nên `engines.node` là `>=22.13`.
+  - `engines.node` chỉ nói mức tối thiểu để chạy app. Các gói dev-only của Nest CLI (`@nestjs/schematics` 12, `@angular-devkit/*` 22) khai báo `node: ^22.22.3 || ^24.15.0 || >=26.0.0`, nên `npm ci` trên Node 22.13–22.22 in cảnh báo `EBADENGINE` cho chúng. Không nâng `engines.node` theo các gói này, vì app chạy được từ 22.13 và build vẫn chạy trên 22.19. Khuyến nghị dùng Node ≥ 22.22.3 khi phát triển local ([08 §2.1](08-deployment.md#21-yêu-cầu)).
   - Jest dùng hệ module CommonJS riêng và chỉ `require()` được ES module từ Node 24.9. Để chạy test trên Node 22, `jest.config.js` cho Jest chuyển các gói `@nestjs/*` sang CommonJS bằng `test/esm-to-cjs.transformer.js` (dùng `ts.transpileModule`). Transformer thay `import.meta.url` bằng URL của file và bỏ các dòng tự khai báo lại `require`/`__filename`/`__dirname` (ví dụ `const require = createRequire(import.meta.url)` trong `@nestjs/swagger`), vì trong CommonJS các biến này đã có sẵn. Code production không đi qua transformer này.
   - Không dùng Vitest (mặc định của template ESM của NestJS 12): `npm install vitest` với npm 10.9 bị lỗi `Cannot read properties of null (reading 'edgesOut')` do chuỗi peer dependency tùy chọn của Vite 8. Lint dùng ESLint theo kế hoạch, không dùng oxlint của template.
   - TypeScript 6.0 (`~6.0`): `@nestjs/cli` 12 khóa `~6.0.2`, typescript-eslint hỗ trợ `<6.1`, ts-jest hỗ trợ `<7`. `tsconfig` bật `isolatedModules` (ts-jest yêu cầu khi dùng `nodenext`), nên kiểu chỉ dùng trong chữ ký có decorator phải `import type`.
@@ -285,6 +286,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-14 | ADR-029: ghi nhận Nest CLI (dev-only) cần Node ≥ 22.22.3, nên `npm ci` cảnh báo `EBADENGINE` trên 22.13–22.22. `engines.node` giữ `>=22.13` cho runtime |
 | 2026-10-14 | ADR-011: làm rõ hệ quả. Chỉ lỗi 500 ẩn `message`. Lỗi 503 trả thông điệp ngắn, cố định để client biết nên thử lại |
 | 2026-10-14 | ADR-029: ghi nhận NestJS 12 chỉ phát hành ES module. Dự án giữ CommonJS (Node ≥ 22.13), Jest dùng transformer chuyển `@nestjs/*` sang CommonJS, TypeScript 6.0 |
 | 2026-10-14 | ADR-028 chuyển sang Đã duyệt theo kế hoạch implement. Thêm ADR-029 (phiên bản thư viện) khi bắt đầu code |

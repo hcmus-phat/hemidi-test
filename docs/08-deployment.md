@@ -13,6 +13,8 @@
 
 Node.js 22 LTS (≥ 22.13), npm, Docker Desktop.
 
+`engines.node` (`>=22.13`) là mức tối thiểu để **chạy** app: TypeORM 1.x cần `^22.13` và các gói `@nestjs/*` 12 cần `require(esm)` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)). Mọi dependency production đều chấp nhận mức này. Riêng các gói dev-only của Nest CLI (`@nestjs/schematics`, `@angular-devkit/core`, `@angular-devkit/schematics`, `@angular-devkit/schematics-cli`) khai báo `node: ^22.22.3 || ^24.15.0 || >=26.0.0`. Vì vậy trên Node 22.13–22.22, `npm ci` in cảnh báo `npm warn EBADENGINE Unsupported engine` cho các gói này. Cảnh báo vô hại (npm không bật `engine-strict`): `npm run build`, `npm test` và `npm run lint` vẫn chạy bình thường, đã kiểm tra trên Node 22.19. Dùng Node ≥ 22.22.3 hoặc ≥ 24.15 khi phát triển local để không còn cảnh báo.
+
 ### 2.2 `docker-compose.yml`
 
 ```yaml
