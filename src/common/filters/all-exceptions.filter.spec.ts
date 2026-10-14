@@ -233,6 +233,17 @@ describe('AllExceptionsFilter', () => {
 
       expect(loggerError).toHaveBeenCalledTimes(1);
     });
+
+    it('logs the SQLSTATE and SQL of a failed query, but not its parameters', () => {
+      catchWithFilter(queryFailed('42P01'));
+
+      expect(loggerError).toHaveBeenCalledTimes(1);
+      const [message, stack] = loggerError.mock.calls[0] as [string, string];
+      expect(message).toBe(
+        'POST /products?page=1 -> 500 INTERNAL_ERROR [SQLSTATE 42P01] INSERT INTO "products" ("sku") VALUES ($1)',
+      );
+      expect(`${message}\n${stack}`).not.toContain('SECRET-SKU');
+    });
   });
 
   describe('unknown errors', () => {

@@ -19,8 +19,10 @@ export function buildTypeOrmOptions(
     url: db.url,
     ssl: db.ssl,
     poolSize: db.poolMax,
-    // Failed queries reach AllExceptionsFilter, so only TypeORM warnings
-    // (e.g. pool errors) are logged unless SQL logging is switched on.
+    // TypeORM's own 'error' logging is off: failed queries reach
+    // AllExceptionsFilter, which logs the SQLSTATE and SQL of those that end
+    // up as 5xx and stays quiet about expected ones (e.g. a duplicate SKU is
+    // a 409). Only TypeORM warnings are logged unless SQL logging is on.
     logging: db.logging ? 'all' : ['warn'],
     entities: [join(__dirname, '..', '**', '*.entity.{ts,js}')],
     migrations: [join(__dirname, 'migrations', '*.{ts,js}')],

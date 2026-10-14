@@ -44,6 +44,20 @@ function isExposedHttpError(
   return typeof status === 'number' && expose === true;
 }
 
+/**
+ * SQLSTATE and SQL of a failed query, for the log only (docs/04 §2). The stack
+ * of a QueryFailedError holds neither. Query parameters are left out on
+ * purpose: they can contain customer emails (docs/02 §8).
+ */
+function describeFailedQuery(exception: unknown): string {
+  if (!(exception instanceof QueryFailedError)) {
+    return '';
+  }
+  const { code } = (exception.driverError ?? {}) as { code?: unknown };
+  const sqlState = typeof code === 'string' ? code : 'unknown';
+  return ` [SQLSTATE ${sqlState}] ${exception.query}`;
+}
+
 /** Error codes for HTTP errors raised by Nest or Express (unknown route, ParseUUIDPipe, ...). */
 const ERROR_CODE_BY_STATUS: Partial<Record<number, ErrorCode>> = {
   [HttpStatus.BAD_REQUEST]: ErrorCode.VALIDATION_ERROR,
@@ -59,6 +73,9 @@ const ERROR_CODE_BY_STATUS: Partial<Record<number, ErrorCode>> = {
  * - Client errors from Express middleware (body-parser): code derived from the status.
  * - TypeORM QueryFailedError: mapped by Postgres error code and constraint name.
  * - Anything else: 500 INTERNAL_ERROR. The stack is logged, never returned.
+ *
+ * Every 5xx is logged with its stack, plus the SQLSTATE and SQL for a failed
+ * query. 4xx errors are expected and not logged.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -74,7 +91,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (error.status >= 500) {
       this.logger.error(
-        `${request.method} ${path} -> ${error.status} ${error.code}`,
+        `${request.method} ${path} -> ${error.status} ${error.code}${describeFailedQuery(exception)}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
