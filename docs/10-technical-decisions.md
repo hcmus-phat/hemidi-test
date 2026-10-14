@@ -221,7 +221,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 ### ADR-022: `PATCH` `stock` là giá trị tuyệt đối
 
 - **Quyết định:** `PATCH /products/:id` với `stock` sẽ đặt giá trị tuyệt đối.
-- **Hệ quả:** Về mặt nghĩa có thể ghi đè một lần trừ kho vừa xảy ra (hạn chế đã biết). Cách khắc phục là endpoint điều chỉnh theo delta, nằm trong ADR-028 (chờ duyệt).
+- **Hệ quả:** Về mặt nghĩa có thể ghi đè một lần trừ kho vừa xảy ra (hạn chế đã biết). Cách khắc phục là endpoint điều chỉnh theo delta. ADR-028 (đã duyệt) để nó ở mục "hướng cải tiến".
 
 ### ADR-023: Tách hai tiến trình API và Worker
 

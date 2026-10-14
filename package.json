@@ -29,9 +29,11 @@
     "migration:run:prod": "typeorm -d dist/database/data-source.js migration:run",
     "job:expire-now": "ts-node src/scripts/expire-now.ts",
     "job:requeue": "ts-node src/scripts/requeue-order.ts",
+    "race:last-item": "ts-node src/scripts/race-last-item.ts",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage --passWithNoTests"
+    "test:cov": "jest --coverage --passWithNoTests",
+    "test:e2e": "jest --config test/jest-e2e.config.js --runInBand"
   },
   "dependencies": {
     "@nestjs/bullmq": "^12.0.0",
@@ -59,6 +61,7 @@
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.20.5",
+    "@types/supertest": "^7.2.1",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.7",
@@ -66,6 +69,7 @@
     "jest": "^30.5.2",
     "prettier": "^3.9.10",
     "source-map-support": "^0.5.21",
+    "supertest": "^7.3.1",
     "ts-jest": "^29.4.14",
     "ts-node": "^10.9.2",
     "typescript": "~6.0.3",

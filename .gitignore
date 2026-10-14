@@ -4,6 +4,8 @@ coverage/
 .env
 .env.*
 !.env.example
+# Local docker-compose defaults for the e2e tests, no secrets.
+!.env.test
 *.log
 .DS_Store
 .idea/

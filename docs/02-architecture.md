@@ -141,14 +141,19 @@ flowchart LR
 │   │   ├── order-processing.processor.ts  # WorkerHost, chỉ có trong WorkerModule; đặt concurrency, đóng Worker ở onModuleDestroy
 │   │   ├── order-jobs.scheduler.ts        # upsertJobScheduler khi worker khởi động (không await, không chặn khởi động khi Redis tắt)
 │   │   └── failure-simulator.ts           # maybeFail(): ném SimulatedFailureError với xác suất JOB_FAILURE_RATE (RANDOM_SOURCE)
-│   ├── scripts/                           # Lệnh dev chạy bằng ts-node, dùng AppModule (không có worker/relay)
+│   ├── scripts/                           # Lệnh dev chạy bằng ts-node. expire-now và requeue-order dùng AppModule (không có worker/relay)
 │   │   ├── expire-now.ts                  # npm run job:expire-now: chạy expireStaleOrders() một lần (MT-09)
-│   │   └── requeue-order.ts               # npm run job:requeue -- <orderId>: xóa rồi đẩy lại job order-<id> (MT-08)
+│   │   ├── requeue-order.ts               # npm run job:requeue -- <orderId>: xóa rồi đẩy lại job order-<id> (MT-08)
+│   │   └── race-last-item.ts              # npm run race:last-item -- [baseUrl] [N]: N đơn đồng thời cho món cuối (06 §9), chỉ dùng HTTP
 │   └── health/
 │       └── health.controller.ts           # GET /health
 ├── test/
-│   ├── concurrency.e2e-spec.ts            # IT-01..IT-05
-│   └── jest-e2e.json
+│   ├── esm-to-cjs.transformer.js          # Jest: chuyển các gói @nestjs/* (ES module) sang CommonJS
+│   ├── jest-e2e.config.js                 # Cấu hình e2e (npm run test:e2e), dùng lại transform của jest.config.js
+│   ├── concurrency.e2e-spec.ts            # IT-01, IT-01b, IT-02, IT-02b, IT-03 (Postgres)
+│   ├── outbox-relay.e2e-spec.ts           # IT-04, IT-05 (Postgres và Redis)
+│   └── e2e/                               # globalSetup (tạo DB test, migration), nạp .env.test, test app, module relay không có vòng lặp
+├── .env.test                              # Env của test e2e: giá trị mặc định của docker-compose, không có secret
 ├── docker-compose.yml
 ├── .env.example
 ├── vercel.json

@@ -63,11 +63,11 @@
 - [ ] `OrdersService.expireStaleOrders` (theo lô, mỗi đơn một transaction)
 - [ ] Script `job:expire-now`, UT-10, MT-09
 
-### Giai đoạn 5: Kiểm thử đồng thời (~0.5 ngày) → NFR-01 *(phạm vi chờ duyệt, [ADR-028](10-technical-decisions.md#adr-028-phạm-vi-bổ-sung))*
+### Giai đoạn 5: Kiểm thử đồng thời (~0.5 ngày) → NFR-01 *(trong phạm vi theo [ADR-028](10-technical-decisions.md#adr-028-phạm-vi-bổ-sung))*
 
 - [ ] Hạ tầng e2e: `.env.test`, migration trong `globalSetup`, truncate trong `beforeEach`
 - [ ] IT-01, IT-01b, IT-02, IT-02b, IT-03, IT-04, IT-05
-- [ ] `scripts/race-last-item.ts`, và thử bỏ khóa để thấy bán vượt (ghi kết quả vào README)
+- [ ] `src/scripts/race-last-item.ts` (`npm run race:last-item`), và thử bỏ khóa để thấy bán vượt (ghi kết quả vào [06 §9](06-concurrency.md#9-kiểm-chứng) và README)
 
 ### Giai đoạn 6: Deploy (~0.5 ngày) → D-02, D-03
 
@@ -194,7 +194,7 @@ Hướng cải tiến (ngoài phạm vi, nên nêu để thể hiện hiểu bi�
 |---|---|---|
 | Vì sao trừ kho khi tạo đơn chứ không phải trong job? | Đề yêu cầu một transaction. Khách biết hết hàng ngay. Job retry không bao giờ đụng tới kho | [05 §1](05-order-processing.md#1-tổng-quan) |
 | `SELECT … FOR UPDATE` hoạt động thế nào? Vì sao `READ COMMITTED` đủ? | Khóa dòng, bên sau phải chờ. Sau khi chờ, Postgres đọc lại phiên bản mới nhất và đánh giá lại `WHERE` | [06 §4.4](06-concurrency.md#44-vì-sao-read-committed-là-đủ) |
-| Bỏ khóa thì chuyện gì xảy ra? | Lost update hoặc stock âm. Đã thử nghiệm bằng script | [06 §2](06-concurrency.md#2-minh-họa-race-condition-khi-không-khóa), [06 §9](06-concurrency.md#9-kiểm-chứng) |
+| Bỏ khóa thì chuyện gì xảy ra? | Trừ kho tương đối nên không mất cập nhật, nhưng nhiều request cùng qua bước kiểm tra và `CHECK (stock >= 0)` phải chặn (409 không có `details`). Bỏ cả `CHECK` thì 20 đơn cho 1 món, `stock = -19`. Đã thử bằng script | [06 §2](06-concurrency.md#2-minh-họa-race-condition-khi-không-khóa), [06 §9.2](06-concurrency.md#92-thí-nghiệm-bỏ-khóa) |
 | Deadlock xảy ra khi nào, tránh thế nào? | Hai đơn khóa các sản phẩm theo thứ tự ngược nhau. Giải pháp: luôn khóa theo `id` tăng dần | [06 §5](06-concurrency.md#5-chống-deadlock) |
 | Vì sao dùng Outbox mà không đẩy job thẳng? Redis chết thì sao? | Đẩy trong transaction thì worker có thể đọc đơn chưa commit. Đẩy sau commit thì có thể mất job. Outbox ghi đơn và sự kiện nguyên tử. Redis chết thì sự kiện chờ trong outbox, relay đẩy lại sau | [05 §3.3](05-order-processing.md#33-vì-sao-chọn-outbox), [ADR-003](10-technical-decisions.md#adr-003-đẩy-job-qua-transactional-outbox) |
 | Relay đẩy trùng thì sao? | Relay là at-least-once. `jobId` cố định khiến BullMQ bỏ qua bản trùng, cộng thêm guard trạng thái và CAS phía sau | [05 §6](05-order-processing.md#6-idempotency) |

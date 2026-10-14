@@ -58,7 +58,7 @@ volumes:
   redisdata:
 ```
 
-> DB `mini_oms_test` cho integration test được tạo tự động bởi `docker/postgres/init/01-create-test-db.sql` khi volume `pgdata` được khởi tạo lần đầu. Nếu volume đã tồn tại từ trước khi có script này, tạo thủ công: `docker exec -it mini-oms-postgres createdb -U postgres mini_oms_test` (hoặc `docker compose down -v` để khởi tạo lại, mất dữ liệu dev).
+> DB `mini_oms_test` cho integration test được tạo tự động bởi `docker/postgres/init/01-create-test-db.sql` khi volume `pgdata` được khởi tạo lần đầu. Nếu volume đã tồn tại từ trước khi có script này, `npm run test:e2e` tự tạo DB (`test/e2e/global-setup.ts`), hoặc tạo thủ công: `docker exec -it mini-oms-postgres createdb -U postgres mini_oms_test`.
 
 ### 2.3 Các bước
 
@@ -96,7 +96,9 @@ npm run start:worker:dev              # Worker: xem log xử lý job
 | `seed` | `ts-node src/database/seed.ts` | Dữ liệu mẫu |
 | `job:expire-now` | `ts-node src/scripts/expire-now.ts` | Gọi `expireStaleOrders()` một lần, dùng cho MT-09. Script dùng `AppModule` (không có worker), chỉ cần DB. `ts-node` dùng `tsconfig.json` của dự án và chạy được trên Windows, mất khoảng 8–10s vì phải kiểm tra kiểu |
 | `job:requeue` | `ts-node src/scripts/requeue-order.ts` | `npm run job:requeue -- <orderId>`: xóa job `order-<id>` rồi đẩy lại, dùng cho MT-08 |
-| `test` / `test:e2e` / `test:cov` | Jest | Xem [07](07-testing.md) |
+| `race:last-item` | `ts-node src/scripts/race-last-item.ts` | `npm run race:last-item -- [baseUrl] [N]`: N đơn đồng thời cho một sản phẩm `stock = 1` trên API đang chạy, in kết quả ([06 §9](06-concurrency.md#9-kiểm-chứng)) |
+| `test` / `test:cov` | `jest` | Unit test ([07 §2–4](07-testing.md)) |
+| `test:e2e` | `jest --config test/jest-e2e.config.js --runInBand` | Integration/đồng thời trên Postgres và Redis của docker-compose, DB `mini_oms_test`, env `.env.test` ([07 §5](07-testing.md#5-integration-test-và-test-đồng-thời)) |
 
 ## 3. Kiến trúc production
 

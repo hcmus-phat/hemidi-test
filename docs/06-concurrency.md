@@ -190,39 +190,39 @@ Nếu vẫn gặp `40P01` (không mong đợi), filter ánh xạ sang `503 SERVI
 | IT-02b | 2 sản phẩm, một nửa request đặt `[P1, P2]`, nửa còn lại đặt `[P2, P1]` | Không có lỗi `40P01`/`503` |
 | IT-03 | 5 request hủy đồng thời cùng một đơn | 1 request `200`, 4 request `409`. Kho chỉ được hoàn một lần |
 
-Script thủ công (chạy với API local hoặc bản deploy):
+Các test trên nằm trong `test/concurrency.e2e-spec.ts` (`npm run test:e2e`, chi tiết ở [07 §5](07-testing.md#5-integration-test-và-test-đồng-thời)). IT-01 còn kiểm tra mọi `409` đều có `details` với `available: 0`: chúng bị từ chối bởi bước kiểm tra tồn kho dưới khóa, không phải bởi `CHECK`.
 
-```ts
-// scripts/race-last-item.ts  —  BASE_URL=http://localhost:3000 npx ts-node scripts/race-last-item.ts
-const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
-const N = 20;
+> Về IT-02b: câu khóa là **một** câu `WHERE id IN (...) FOR UPDATE`, nên Postgres khóa các dòng theo thứ tự của kế hoạch thực thi (index scan trên khóa chính trả về theo `id`), giống nhau cho mọi transaction, bất kể thứ tự client gửi. Đã thử tạm bỏ `ORDER BY id`: IT-02b vẫn pass. `ORDER BY id` giữ thứ tự đó một cách tường minh thay vì phụ thuộc vào kế hoạch thực thi. Deadlock sẽ xảy ra nếu code khóa từng sản phẩm bằng các câu riêng theo thứ tự client gửi.
 
-const json = (r: Response) => r.json();
-const post = (path: string, body: unknown) =>
-  fetch(`${BASE}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+### 9.1 Script thủ công
 
-async function main() {
-  const product = await post('/products', { sku: `RACE-${Date.now()}`, name: 'Last item', price: 100000, stock: 1 }).then(json);
+`src/scripts/race-last-item.ts` tạo một sản phẩm `stock = 1`, gửi N đơn `quantity = 1` cùng lúc tới một API đang chạy (local hoặc bản deploy), rồi in kết quả theo từng loại response và tồn kho cuối:
 
-  const statuses = await Promise.all(
-    Array.from({ length: N }, (_, i) =>
-      post('/orders', {
-        customerName: `Customer ${i}`,
-        customerEmail: `c${i}@example.com`,
-        items: [{ productId: product.id, quantity: 1 }],
-      }).then((r) => r.status),
-    ),
-  );
-
-  const counts = statuses.reduce<Record<number, number>>((acc, s) => ({ ...acc, [s]: (acc[s] ?? 0) + 1 }), {});
-  const after = await fetch(`${BASE}/products/${product.id}`).then(json);
-  console.log(counts, 'stock =', after.stock); // kỳ vọng: { '201': 1, '409': 19 } stock = 0
-}
-
-main();
+```bash
+npm run race:last-item                                        # http://localhost:3000, 20 đơn
+npm run race:last-item -- https://<project>.vercel.app 50     # API khác, 50 đơn
 ```
 
-> **Thí nghiệm nên làm trước buổi phỏng vấn:** tạm bỏ `.setLock('pessimistic_write')` rồi chạy lại script. Sẽ có nhiều đơn `201` hoặc lỗi `23514`. Thí nghiệm này cho thấy khóa thực sự là thứ đang bảo vệ hệ thống.
+Script phân biệt hai loại `409 INSUFFICIENT_STOCK`: có `details` là do bước kiểm tra của `OrdersService`, không có `details` là do `CHECK (stock >= 0)` của Postgres (lỗi `23514`, `AllExceptionsFilter` ánh xạ sang `409` không kèm `details`). Script trả exit code 1 nếu có hơn một đơn được tạo hoặc tồn kho âm.
+
+### 9.2 Thí nghiệm bỏ khóa
+
+Chạy ngày 2026-10-15 trên máy local (API `node dist/main.js` với `DATABASE_POOL_MAX=20`, DB tạm `mini_oms_race`). Thay đổi code chỉ là tạm thời, **không commit**:
+
+| # | Cấu hình | Kết quả (20 đơn đồng thời, `stock = 1`) |
+|---|---|---|
+| 1 | Code hiện tại (có `FOR UPDATE` và `CHECK`) | 1 × `201`, 19 × `409` từ `OrdersService`, `stock = 0`. Với 50 đơn: 1 × `201`, 49 × `409` |
+| 2 | Tạm xóa dòng `.setLock('pessimistic_write')` trong `ProductStockRepository.findActiveForUpdate` | Vẫn 1 × `201`, `stock = 0`, nhưng 10–19 trong số các `409` là do `CHECK`: nhiều request cùng đọc `stock = 1`, cùng qua bước kiểm tra, rồi `UPDATE … stock = stock - 1` của chúng chờ nhau trên khóa dòng mà `UPDATE` tự lấy, và bị `CHECK` từ chối khi kết quả là `-1` |
+| 3 | Như #2, và thêm `ALTER TABLE products DROP CONSTRAINT chk_products_stock_non_negative` trên DB tạm | **Bán vượt:** 20 × `201`, `stock = -19`. Với 50 đơn: 20 × `201` (đúng bằng số connection của pool, các transaction đọc tồn kho cùng lúc), 30 × `409`, `stock = -19` |
+
+Cách tự làm lại:
+
+1. Tạo DB tạm và chạy migration: `docker exec mini-oms-postgres createdb -U postgres mini_oms_race`, rồi chạy `npm run migration:run` với `DATABASE_URL=postgres://postgres:postgres@localhost:5432/mini_oms_race` (bash: đặt biến ngay trước lệnh, PowerShell: `$env:DATABASE_URL = "…"` rồi chạy lệnh).
+2. Xóa dòng `.setLock('pessimistic_write')`, `npm run build`, chạy API (`node dist/main.js`) với `DATABASE_URL` trỏ vào DB tạm, rồi `npm run race:last-item`.
+3. Bỏ `CHECK` trên DB tạm: `docker exec mini-oms-postgres psql -U postgres -d mini_oms_race -c "ALTER TABLE products DROP CONSTRAINT chk_products_stock_non_negative"`, chạy lại script.
+4. Khôi phục: `git checkout -- src/products/product-stock.repository.ts`, `npm run build`, `docker exec mini-oms-postgres dropdb -U postgres mini_oms_race`.
+
+Kết luận: `FOR UPDATE` là thứ quyết định nghiệp vụ (mọi request bị từ chối đều nhận lỗi chi tiết). Trừ kho tương đối cùng `CHECK` là lớp phòng thủ khiến việc bỏ khóa không làm âm kho, nhưng client nhận lỗi DB không có `details`. Bỏ cả hai thì bán vượt thật.
 
 ## 10. Ý chính khi trình bày
 

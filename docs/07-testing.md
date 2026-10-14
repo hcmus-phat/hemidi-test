@@ -182,8 +182,22 @@ Các processor và relay được tạo trực tiếp bằng `new` với các de
 
 ## 5. Integration test và test đồng thời
 
-**Môi trường:** Postgres và Redis từ `docker-compose`. Dùng DB riêng `mini_oms_test` (`DATABASE_URL` trong `.env.test`). `globalSetup` chạy migration. `beforeEach` chạy `TRUNCATE order_items, notification_logs, orders, products RESTART IDENTITY CASCADE`.
+**Môi trường:** Postgres và Redis từ `docker-compose`. Dùng DB riêng `mini_oms_test` (`DATABASE_URL` trong `.env.test`). `globalSetup` chạy migration. `beforeEach` chạy `TRUNCATE outbox_events, notification_logs, order_items, orders, products RESTART IDENTITY CASCADE`.
 App được bootstrap bằng `AppModule` (không có worker) và gọi qua `supertest(app.getHttpServer())`. Mỗi request lấy một connection riêng từ pool, nên các transaction thực sự chạy song song trên Postgres.
+
+Hiện thực (`npm run test:e2e` = `jest --config test/jest-e2e.config.js --runInBand`):
+
+| File | Nội dung |
+|---|---|
+| `.env.test` | Được commit vì chỉ chứa giá trị mặc định của docker-compose, không có secret. Liệt kê **mọi** biến để giá trị trong `.env` của người dev không lọt vào test (biến môi trường thật vẫn được ưu tiên, giống app). `DATABASE_POOL_MAX=40`: mỗi request đồng thời (IT-02b gửi 40) có connection riêng. `DB_LOCK_TIMEOUT_MS=60000`: test kiểm tra thứ tự khóa chứ không kiểm tra timeout. Postgres vẫn phát hiện deadlock sau `deadlock_timeout` (1s) bất kể giá trị này, còn timeout ngắn có thể bị kích hoạt sai khi đồng hồ máy ảo Docker nhảy (đã gặp, khoảng 14s) |
+| `test/jest-e2e.config.js` | Dùng lại `transform` và `transformIgnorePatterns` của `jest.config.js` (các gói `@nestjs/*` 12 chỉ có ES module). `globalSetup`, `setupFiles` (nạp `.env.test` trước mỗi file test), `testTimeout` 30s |
+| `test/e2e/global-setup.ts` | Kiểm tra tên DB kết thúc bằng `_test` (test xóa sạch dữ liệu nên không bao giờ chạy trên DB dev). Tạo DB nếu chưa có (volume tạo trước khi có `docker/postgres/init`), rồi chạy migration với cùng option như CLI |
+| `test/e2e/test-app.ts` | `createTestApp()`: `AppModule` cùng `configureApp()`, lắng nghe một cổng ngẫu nhiên trong suốt file test (nếu không, supertest bật/tắt server quanh mỗi lô request). `resetDatabase()`, các hàm gọi API và đọc DB |
+| `test/e2e/relay-testing-module.ts` | Phía worker của outbox, không có vòng lặp nền: `OutboxRelayService`, queue và producer, kết nối Redis như worker nhưng với prefix `mini-oms-e2e`. Module chỉ `compile()` (không `init()`), nên hook `onApplicationBootstrap` không chạy và vòng quét của relay không khởi động. Không có processor nên không có BullMQ `Worker` |
+| `test/concurrency.e2e-spec.ts` | IT-01, IT-01b, IT-02, IT-02b, IT-03 (chỉ cần Postgres) |
+| `test/outbox-relay.e2e-spec.ts` | IT-04, IT-05 (Postgres và Redis) |
+
+Mỗi file đóng app, `DataSource` và kết nối Redis trong `afterAll`, nên Jest tự thoát mà không cần `--forceExit`.
 
 | Mã | Kịch bản | Kỳ vọng |
 |---|---|---|
@@ -196,6 +210,16 @@ App được bootstrap bằng `AppModule` (không có worker) và gọi qua `sup
 | IT-05 | Tạo đơn khi `OrderQueueProducer` bị override để ném lỗi (mô phỏng Redis chết), rồi gọi `relayBatch()`. Sau đó gỡ lỗi và gọi `relayBatch()` lần nữa | `POST /orders` vẫn `201`. Lần relay đầu: sự kiện còn `published_at IS NULL`, `publish_attempts = 1`, có `last_error`. Lần relay sau: sự kiện được đánh dấu `published_at` |
 
 IT-01..03 không cần Redis, vì `POST /orders` và hủy đơn không gọi Redis. IT-04 dùng Redis thật với `prefix` riêng cho test, và `queue.obliterate({ force: true })` sau mỗi test.
+
+Kiểm tra cụ thể trong code:
+
+- **IT-01:** số lượng status phải đúng `{ 201: 1, 409: 19 }` (không có status nào khác). Mọi `409` đều có `details: [{ productId, requested: 1, available: 0 }]`, tức là bị từ chối bởi bước kiểm tra tồn kho của `OrdersService` (dưới khóa dòng), không phải bởi `CHECK` của DB (lỗi đó không có `details`). `stock = 0`, `orders` và `order_items` mỗi bảng 1 dòng.
+- **IT-01b:** chạy lại kịch bản IT-01 (vì `beforeEach` xóa dữ liệu), `outbox_events` có đúng 1 dòng: `ORDER`, `aggregate_id` là id đơn `201`, `payload = { orderId }`, `published_at = null` (API không chạy relay).
+- **IT-02:** `quantity` ngẫu nhiên. Chỉ có `201`/`409`. Ngoài `Σ ≤ 10` và `stock_cuối = 10 − Σ`, số đơn trong DB bằng số `201`, và mọi đơn bị từ chối đều xin nhiều hơn `stock_cuối` (tồn kho chỉ giảm, nên không có đơn nào bị từ chối oan).
+- **IT-02b:** 40 request xen kẽ `[P1, P2]` / `[P2, P1]`, đúng `{ 201: 40 }`, mỗi `stock` còn 60.
+- **IT-03:** `{ 200: 1, 409: 4 }`, các `409` là `INVALID_ORDER_STATUS` (`Order cannot be cancelled in status CANCELLED`), `stock` về đúng giá trị trước khi đặt, đơn `CANCELLED` / `CUSTOMER_REQUEST`.
+- **IT-04:** gọi `enqueueProcessOrder` 3 lần cho cùng một id. `getJobCounts()` chỉ có `waiting: 1`. Job `order-<id>` có `name = process-order`, `data = { orderId }`, `opts.attempts = 4`.
+- **IT-05:** `jest.spyOn(producer, 'enqueueProcessOrder').mockRejectedValue(...)` mô phỏng Redis chết. `POST /orders` vẫn `201` và kho đã trừ. `relayBatch()` lần đầu trả `{ published: 0, failed: true }`, sự kiện có `published_at = null`, `publish_attempts = 1`, `last_error` là lỗi Redis, chưa có job. Gỡ spy (`mockRestore`), `relayBatch()` trả `{ published: 1, failed: false }`, `published_at` có giá trị, `publish_attempts = 2`, `last_error` được giữ lại, job `order-<id>` có trong queue.
 
 ## 6. Kịch bản test thủ công
 
@@ -230,6 +254,7 @@ SELECT id, aggregate_id, publish_attempts, last_error, created_at FROM outbox_ev
 |---|---|
 | `npm test` | Unit test |
 | `npm run test:cov` | Unit test kèm coverage |
-| `npm run test:e2e` | Integration/đồng thời (cần `docker compose up -d`) |
+| `npm run test:e2e` | Integration/đồng thời (cần `docker compose up -d`): `jest --config test/jest-e2e.config.js --runInBand` |
+| `npm run race:last-item -- [baseUrl] [N]` | Script thủ công [06 §9](06-concurrency.md#9-kiểm-chứng): N đơn đồng thời cho sản phẩm `stock = 1` trên một API đang chạy |
 
-**Tiêu chí đạt:** UT-01..03 bắt buộc pass. Việc đưa test e2e (IT) vào phạm vi bắt buộc đang chờ duyệt ([ADR-028](10-technical-decisions.md#adr-028-phạm-vi-bổ-sung)). Toàn bộ test hiện có pass. IT-01 pass. Mục tiêu coverage `orders.service.ts` ≥ 80% line (không bắt buộc). README liệt kê test nào đã có và test nào chưa làm.
+**Tiêu chí đạt:** UT-01..03 bắt buộc pass. Test e2e IT-01..IT-05 nằm trong phạm vi ([ADR-028](10-technical-decisions.md#adr-028-phạm-vi-bổ-sung), đã duyệt) và phải pass với `docker compose up -d`. Toàn bộ test hiện có pass. Mục tiêu coverage `orders.service.ts` ≥ 80% line (không bắt buộc). README liệt kê test nào đã có và test nào chưa làm.
