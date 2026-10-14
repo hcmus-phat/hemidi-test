@@ -122,6 +122,18 @@ describe('validateEnv', () => {
     expect(env.JOB_PROCESSING_MAX_MS).toBe(4000);
   });
 
+  it('reports a non-numeric MIN only on the MIN variable', () => {
+    let message = '';
+    try {
+      validateEnv({ ...required, JOB_PROCESSING_MIN_MS: 'abc' });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain('JOB_PROCESSING_MIN_MS');
+    expect(message).not.toContain('JOB_PROCESSING_MAX_MS');
+  });
+
   it('requires OUTBOX_MAX_BACKOFF_MS >= OUTBOX_POLL_INTERVAL_MS', () => {
     expect(() =>
       validateEnv({

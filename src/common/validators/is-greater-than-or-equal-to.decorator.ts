@@ -4,13 +4,19 @@ import {
   ValidationOptions,
 } from 'class-validator';
 
+/** `typeof NaN === 'number'`, so a plain typeof check is not enough. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 /**
  * Cross-field rule: the decorated number must be >= the number in `relatedProperty`
  * of the same object (e.g. `maxPrice >= minPrice`).
  *
- * The rule only compares two real numbers. A missing or non-numeric value on
- * either side passes here, because the property's own rules (`@IsInt`,
- * `@IsOptional`, ...) are responsible for reporting it.
+ * The rule only compares two finite numbers. A missing or non-numeric value on
+ * either side (including NaN, which `Number('abc')` produces) passes here,
+ * because the property's own rules (`@IsInt`, `@IsOptional`, ...) are
+ * responsible for reporting it.
  */
 export function IsGreaterThanOrEqualTo(
   relatedProperty: string,
@@ -28,7 +34,7 @@ export function IsGreaterThanOrEqualTo(
           const related = (args.object as Record<string, unknown>)[
             relatedProperty
           ];
-          if (typeof value !== 'number' || typeof related !== 'number') {
+          if (!isFiniteNumber(value) || !isFiniteNumber(related)) {
             return true;
           }
           return value >= related;

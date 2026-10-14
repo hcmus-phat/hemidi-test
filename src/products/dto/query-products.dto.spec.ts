@@ -47,6 +47,15 @@ describe('QueryProductsDto', () => {
     ]);
   });
 
+  it('reports an invalid minPrice only on minPrice', async () => {
+    const error = await parse({ minPrice: 'abc', maxPrice: '5' });
+
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).details?.map((d) => d.field)).toEqual([
+      'minPrice',
+    ]);
+  });
+
   it.each([
     [{ minPrice: '100000', maxPrice: '100000' }],
     [{ minPrice: '100000' }],
