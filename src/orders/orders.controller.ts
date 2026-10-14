@@ -4,6 +4,7 @@ import {
   Get,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -100,5 +101,39 @@ export class OrdersController {
     @Param('id', uuidParam('id')) id: string,
   ): Promise<OrderDetailDto> {
     return OrderDetailDto.fromEntity(await this.ordersService.findOne(id));
+  }
+
+  @Patch(':id/cancel')
+  @ApiOperation({
+    summary: 'Cancel an order',
+    description:
+      'Only a PENDING or CONFIRMED order can be cancelled (cancelReason CUSTOMER_REQUEST). Its stock is given back in the same transaction. No request body.',
+  })
+  @ApiParam(ORDER_ID_PARAM)
+  @ApiOkResponse({ type: OrderDetailDto })
+  @ApiErrorResponse(
+    HttpStatus.BAD_REQUEST,
+    ErrorCode.VALIDATION_ERROR,
+    'id is not a UUID',
+  )
+  @ApiErrorResponse(
+    HttpStatus.NOT_FOUND,
+    ErrorCode.ORDER_NOT_FOUND,
+    'Order does not exist',
+  )
+  @ApiErrorResponse(
+    HttpStatus.CONFLICT,
+    ErrorCode.INVALID_ORDER_STATUS,
+    'The order is FAILED or already CANCELLED',
+  )
+  @ApiErrorResponse(
+    HttpStatus.SERVICE_UNAVAILABLE,
+    ErrorCode.SERVICE_UNAVAILABLE,
+    'Timed out waiting for a lock under heavy load; retry',
+  )
+  async cancel(
+    @Param('id', uuidParam('id')) id: string,
+  ): Promise<OrderDetailDto> {
+    return OrderDetailDto.fromEntity(await this.ordersService.cancel(id));
   }
 }

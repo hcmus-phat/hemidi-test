@@ -19,8 +19,11 @@ import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { Order } from './entities/order.entity';
 import { calculateOrderTotal } from './order-amounts';
-import { OrderStatus } from './order-status.enum';
+import { CancelReason, OrderStatus } from './order-status.enum';
 import { NewOrderItem, OrdersRepository } from './orders.repository';
+
+/** Statuses a customer can cancel from (FR-O05). FAILED and CANCELLED are final. */
+const CANCELLABLE_STATUSES = [OrderStatus.PENDING, OrderStatus.CONFIRMED];
 
 @Injectable()
 export class OrdersService {
@@ -109,6 +112,68 @@ export class OrdersService {
       throw AppException.orderNotFound(orderId);
     }
     return order;
+  }
+
+  /**
+   * Cancels an order at the customer's request and gives its stock back, in
+   * one transaction (docs/05 §7):
+   *
+   * - CAS PENDING | CONFIRMED -> CANCELLED. Of two concurrent cancels only one
+   *   matches, so the stock is released once (docs/05 §8).
+   * - When the CAS matches nothing, one more query tells 404 (no such order)
+   *   from 409 (FAILED or CANCELLED). The success path needs no extra query.
+   * - The stock is released after the CAS, in the same transaction: if that
+   *   fails, the cancellation is rolled back too.
+   */
+  async cancel(orderId: string): Promise<Order> {
+    await this.dataSource.transaction(async (manager) => {
+      await this.setLockTimeout(manager);
+
+      const cancelled = await this.ordersRepo.transitionStatus(
+        manager,
+        orderId,
+        CANCELLABLE_STATUSES,
+        OrderStatus.CANCELLED,
+        { cancelReason: CancelReason.CUSTOMER_REQUEST },
+      );
+      if (!cancelled) {
+        const status = await this.ordersRepo.findStatus(manager, orderId);
+        if (status === null) {
+          throw AppException.orderNotFound(orderId);
+        }
+        throw AppException.invalidOrderStatus(status, 'cancelled');
+      }
+
+      await this.releaseStock(manager, orderId);
+    });
+    // CANCELLED is final, so reading after the commit returns what was committed.
+    return this.findOne(orderId);
+  }
+
+  /**
+   * Gives back the stock of every item of an order: one UPDATE per item, by
+   * ascending product id, the order in which products are always locked
+   * (docs/05 §2.2, docs/06 §5). A single UPDATE ... FROM order_items would
+   * lock rows in an undefined order and could deadlock with an order being
+   * placed.
+   *
+   * Only call it in the transaction of a successful CAS into a final status
+   * (ADR-015): an order leaves PENDING/CONFIRMED once, so its stock is given
+   * back at most once. Used by cancel, and by the worker's paths (failed
+   * last attempt, expired order) through this service.
+   */
+  private async releaseStock(
+    manager: EntityManager,
+    orderId: string,
+  ): Promise<void> {
+    const items = await this.ordersRepo.findItemsForRelease(manager, orderId);
+    for (const item of items) {
+      await this.stockRepo.incrementStock(
+        manager,
+        item.productId,
+        item.quantity,
+      );
+    }
   }
 
   /**

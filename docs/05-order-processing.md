@@ -428,7 +428,7 @@ async cancel(orderId: string): Promise<OrderDetailDto> {
     if (!order) {
       const current = await this.ordersRepo.findStatus(manager, orderId);
       if (current === null) throw AppException.orderNotFound(orderId);
-      throw AppException.invalidOrderStatus(`Order cannot be cancelled in status ${current}`);
+      throw AppException.invalidOrderStatus(current, 'cancelled'); // "Order cannot be cancelled in status FAILED"
     }
     await this.releaseStock(manager, orderId);
   });
@@ -439,6 +439,8 @@ async cancel(orderId: string): Promise<OrderDetailDto> {
 - Hủy và hoàn kho nằm trong **một** transaction: nếu hoàn kho lỗi thì việc hủy cũng rollback.
 - Phân biệt `404` và `409` bằng một truy vấn phụ **chỉ khi** CAS thất bại. Đường đi thành công chỉ tốn một câu `UPDATE`.
 - Hủy đơn khi relay chưa kịp đẩy sự kiện vẫn đúng: relay đẩy job sau đó, và job thấy `CANCELLED` nên bỏ qua (L2).
+- Đọc lại đơn sau khi commit là an toàn: `CANCELLED` là trạng thái cuối nên không ai đổi được nó nữa. Code thật trả entity `Order`, controller chuyển sang `OrderDetailDto`.
+- `releaseStock` là method `private` của `OrdersService`: chỉ các luồng đã CAS thành công trong cùng service (`cancel`, sau này `failOrder` và `expireStaleOrders` mà worker gọi) mới hoàn kho được, nên không thể gọi nhầm khi chưa CAS.
 - *(Tùy chọn)* Sau khi commit, xóa job nếu job còn ở `waiting`/`delayed` để tiết kiệm tài nguyên worker. Bước này không cần cho tính đúng, vì L2/L3 đã đảm bảo.
 
 ## 8. Bảng tình huống race

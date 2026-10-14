@@ -54,6 +54,9 @@ describe('createSwaggerDocument', () => {
     expect(Object.keys(document.paths['/orders/{id}'])).toEqual(
       expect.arrayContaining(['get']),
     );
+    expect(Object.keys(document.paths['/orders/{id}/cancel'])).toEqual([
+      'patch',
+    ]);
   });
 
   it('documents the status filter of GET /orders as an enum', () => {
