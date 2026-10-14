@@ -4,6 +4,16 @@ import type { DataSourceOptions } from 'typeorm';
 import { databaseConfig } from '../config/configuration';
 
 /**
+ * Longest wait to open one connection to Postgres (pg's
+ * `connectionTimeoutMillis`, whose default 0 waits forever). Without it, a
+ * database that accepts the TCP connection but never answers hangs the start
+ * of every process. pg-pool also applies it to a query waiting for a free
+ * connection of a full pool: that query fails after 5 s instead of waiting
+ * for as long as it takes.
+ */
+export const DATABASE_CONNECT_TIMEOUT_MS = 5000;
+
+/**
  * TypeORM options shared by the Nest app (`TypeOrmModule.forRootAsync`) and the
  * TypeORM CLI (`data-source.ts`), so both always connect the same way.
  *
@@ -19,6 +29,7 @@ export function buildTypeOrmOptions(
     url: db.url,
     ssl: db.ssl,
     poolSize: db.poolMax,
+    connectTimeoutMS: DATABASE_CONNECT_TIMEOUT_MS,
     // TypeORM's own 'error' logging is off: failed queries reach
     // AllExceptionsFilter, which logs the SQLSTATE and SQL of those that end
     // up as 5xx and stays quiet about expected ones (e.g. a duplicate SKU is

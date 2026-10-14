@@ -129,13 +129,15 @@ Dùng chung `configureApp()` với `main.ts`. Nest app được tạo **một l�
 let ready: Promise<RequestListener> | undefined;   // app Express bên trong Nest
 
 async function bootstrap(): Promise<RequestListener> {
-  // abortOnError: false: lỗi khởi động bị reject ở đây thay vì process.exit()
+  // abortOnError: false: lỗi khởi động (ví dụ DB không trả lời) bị reject ở đây thay vì process.exit().
+  // create() lỗi thì không có app để close(), nhưng cũng không còn gì mở: Queue (kết nối Redis)
+  // chỉ được tạo sau khi DataSource kết nối xong (QueueModule), nên DB lỗi thì Queue chưa tồn tại
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { abortOnError: false });
   try {
     configureApp(app);   // ValidationPipe, AllExceptionsFilter, Swagger
     await app.init();    // KHÔNG gọi app.listen(): Vercel giữ HTTP server
   } catch (error) {
-    await app.close().catch(() => undefined);   // trả connection của app khởi động dở
+    await app.close().catch(() => undefined);   // init() lỗi: đóng kết nối DB/Redis của app khởi động dở
     throw error;
   }
   return app.getHttpAdapter().getInstance();    // app Express: (req, res) => void
@@ -189,7 +191,7 @@ module.exports = require('../dist/vercel').default;
 
 1. `npm run build`, rồi `node -e "require('./api/index.js')"`: nạp được và thoát ngay (chỉ nạp module, chưa khởi động app).
 2. Một harness nhỏ tạo `http.createServer((req, res) => handler(req, res))` rồi gọi thử. Kết quả trên Node 22.19 với Postgres/Redis của docker-compose: lần gọi đầu khởi động app khoảng 1.2s (hai request đồng thời cùng chờ một lần khởi động). `/api/docs` `200` HTML tham chiếu asset Swagger UI 5.29.1 trên cdnjs, `/api/docs-json` `200` đủ các path (kể cả `/health`), `/health` `200` `ok`, `/products` `200`, `/products/abc` `400 VALIDATION_ERROR`, đường dẫn lạ `404 NOT_FOUND`.
-3. Với `DATABASE_URL` trỏ vào cổng không có Postgres: TypeORM thử kết nối lại 10 lần cách nhau 3s, rồi handler trả `503` theo định dạng lỗi thống nhất. Request sau chạy lại toàn bộ bước khởi động (lỗi không bị cache).
+3. Với `DATABASE_URL` trỏ vào cổng không có Postgres: TypeORM thử kết nối 3 lần cách nhau 2s, handler trả `503` theo định dạng lỗi thống nhất sau khoảng 4s. Request sau chạy lại toàn bộ bước khởi động (lỗi không bị cache). Sau 3 lần khởi động lỗi, số client của Redis (`redis-cli info clients`) không đổi và tiến trình không giữ socket nào tới cổng 6379 (trước khi sửa: mỗi lần lỗi để lại một kết nối Redis). Với Postgres bị `docker pause` (nhận kết nối TCP nhưng không trả lời): `503` sau khoảng 19.5s; `docker unpause` rồi gọi lại thì cùng instance đó khởi động được và trả `200`.
 4. `node dist/main.js` vẫn chạy như trước (`src/main.ts` không đổi).
 
 ### 4.2 Các bước
@@ -206,7 +208,7 @@ module.exports = require('../dist/vercel').default;
 | Swagger UI trắng trang vì không tải được asset tĩnh | Lấy asset từ CDN (khóa phiên bản cố định có trên cdnjs): `SwaggerModule.setup('api/docs', app, document, { customCssUrl: 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/<ver>/swagger-ui.min.css', customJs: ['…/swagger-ui-bundle.min.js', '…/swagger-ui-standalone-preset.min.js'] })`. Code dùng `5.29.1` (bản mới nhất có trên cdnjs lúc code, `swagger-ui-dist` đi kèm `@nestjs/swagger` là 5.33 nhưng chưa có trên cdnjs). HTML của Nest vẫn tham chiếu asset cục bộ trước rồi mới tới thẻ CDN; `swagger-ui-init.js` chỉ chạy ở `window.onload`, nên bản CDN luôn là bản được dùng, kể cả khi asset cục bộ trả 404 trên Vercel |
 | Hết connection Postgres vì mỗi instance mở một pool | Dùng pooled URL của Neon, `DATABASE_POOL_MAX` nhỏ (2–3) |
 | Cold start chậm | Cache app (`ready ??= bootstrap()`), không chạy migration lúc khởi động, giữ `AppModule` gọn (không import processor). Swagger document chỉ được dựng khi `/api/docs` được gọi lần đầu |
-| Khởi động lỗi (DB chưa sẵn sàng) | TypeORM thử kết nối lại 10 lần cách nhau 3s (khoảng 27s, vẫn trong `maxDuration` 30s), rồi handler trả `503 SERVICE_UNAVAILABLE` theo định dạng thống nhất. Promise lỗi không được cache, request sau khởi động lại. App khởi động dở được `close()` để trả connection |
+| Khởi động lỗi (DB chưa sẵn sàng) | TypeORM thử kết nối tối đa 3 lần cách nhau 2s, mỗi lần tối đa 5s (`connectTimeoutMS`, mặc định của `pg` là chờ mãi). DB từ chối kết nối thì lỗi sau vài giây, DB không trả lời thì sau khoảng 3 × 5s + 2 × 2s ≈ 19s, vẫn trong `maxDuration` 30s. Handler trả `503 SERVICE_UNAVAILABLE` theo định dạng thống nhất. Promise lỗi không được cache, request sau khởi động lại. Lỗi DB xảy ra trong `NestFactory.create()`, khi chưa có app để `close()`. Vì vậy `QueueModule` chỉ tạo Queue (Queue mở kết nối Redis ngay khi được tạo) sau khi DataSource kết nối xong, và lần khởi động lỗi vì DB không để lại kết nối Redis nào. Lỗi ở `app.init()` thì app khởi động dở được `close()` |
 | Env sai (thiếu `DATABASE_URL`, giá trị không hợp lệ) | `ConfigModule` validate ngay khi nạp `AppModule`, nên function lỗi lúc nạp module và log liệt kê mọi biến sai, giống `main.ts` dừng ngay. Đây là lỗi cấu hình chứ không phải lỗi tạm thời, nên không bị đổi thành `503` |
 | Function chạy Node 24 thay vì 22 | `engines.node` là `^22.13` (§4.1). Một khoảng mở như `>=22.13` sẽ được Vercel map sang 24.x |
 | Worker vô tình chạy trong function | `AppModule` không import `WorkerModule` hay bất kỳ `@Processor` nào |

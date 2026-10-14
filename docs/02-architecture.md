@@ -75,8 +75,8 @@ flowchart LR
 │   │   ├── configuration.ts          # Đọc env, trả về object cấu hình có kiểu
 │   │   └── env.validation.ts         # Validate env lúc khởi động (sai thì dừng ngay)
 │   ├── database/
-│   │   ├── database.module.ts        # TypeOrmModule.forRootAsync, dùng chung AppModule và WorkerModule
-│   │   ├── typeorm.options.ts        # Options dùng chung cho app và CLI
+│   │   ├── database.module.ts        # TypeOrmModule.forRootAsync, dùng chung AppModule và WorkerModule. Khởi động: thử kết nối 3 lần, cách nhau 2s
+│   │   ├── typeorm.options.ts        # Options dùng chung cho app và CLI (pool, SSL, connectTimeoutMS 5s)
 │   │   ├── data-source.ts            # DataSource cho TypeORM CLI (migration)
 │   │   └── migrations/               # Migration viết tay hoặc generate rồi review lại
 │   ├── common/
@@ -136,7 +136,7 @@ flowchart LR
 │   │   ├── outbox-event-type.enum.ts      # OutboxEventType, OutboxAggregateType, payload ORDER_CREATED
 │   │   └── entities/outbox-event.entity.ts
 │   ├── queue/
-│   │   ├── queue.module.ts                # registerQueue + producer; QueueModule.forRoot(role) = BullModule.forRootAsync
+│   │   ├── queue.module.ts                # registerQueueAsync (Queue chỉ được tạo sau DataSource) + producer; QueueModule.forRoot(role) = BullModule.forRootAsync
 │   │   ├── queue.constants.ts             # ORDER_PROCESSING_QUEUE, OrderJobName, buildOrderJobId()
 │   │   ├── redis-connection.ts            # parseRedisUrl(), buildRedisConnection(url, role): option khác nhau cho API và worker
 │   │   ├── redis-error-logger.ts          # Listener 'error' cho Queue/Worker, không lặp log khi Redis tắt
@@ -304,6 +304,7 @@ Cách hiện thực (`src/config/`):
 - BullMQ 6 không tự cài `ioredis` nữa (peer dependency tùy chọn), nên dự án khai báo `ioredis` 5.x trong `dependencies` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)).
 - `parseRedisUrl()` tạo connection options từ `REDIS_URL`: host (bỏ ngoặc của IPv6), port (mặc định 6379), username, password (giải mã `%xx`), số DB ở path (`/2`, phải là số nguyên không âm), và `tls: {}` khi URL là `rediss://`.
 - Mỗi tiến trình import `QueueModule.forRoot(role)` đúng một lần ở module gốc. Đây là cấu hình BullMQ toàn cục của tiến trình đó, `QueueModule` (đăng ký queue và producer) dùng lại nó. Tạo kết nối không chờ Redis, nên API và worker vẫn khởi động được khi Redis đang tắt.
+- Queue mở kết nối Redis ngay khi được tạo, và chỉ `app.close()` mới đóng nó. `QueueModule` đăng ký queue bằng `registerQueueAsync` có inject `DataSource`, nên Nest chỉ tạo Queue sau khi DB đã kết nối, và không tạo khi DB lỗi. Lý do: DB lỗi thì `NestFactory.create()` reject mà không trả về app để `close()`. Handler Vercel thử khởi động lại trong cùng tiến trình, nên một Queue tạo trước đó sẽ để lại một kết nối Redis sau mỗi lần lỗi ([08 §4.3](08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)). Phụ thuộc này phải là phụ thuộc bắt buộc của queue: đặt nó ở `QueueModule.forRoot` không có tác dụng, vì `@nestjs/bullmq` inject cấu hình chung bằng `@Optional()` và Nest đổi một phụ thuộc tùy chọn bị lỗi thành `undefined`, rồi vẫn tạo Queue với kết nối mặc định.
 - **API** (`RedisConnectionRole.Api`): `enableOfflineQueue: false`. Khi mất kết nối, lệnh Redis bị từ chối ngay thay vì nằm chờ trong offline queue của ioredis, nên `GET /orders/:id/jobs` trả `503` ngay.
 - **Worker** (`RedisConnectionRole.Worker`): `maxRetriesPerRequest: null` (BullMQ yêu cầu với kết nối blocking của `Worker`). Offline queue **phải** để bật: với `enableOfflineQueue: false`, lệnh lấy job của `Worker` bị lỗi ngay và vòng lặp của BullMQ thử lại liên tục không nghỉ. Khi Redis chạy lại, lệnh đang chờ được gửi đi và `Worker` tự chạy tiếp.
 - Ngoài ra, mọi lời gọi Redis từ code của dự án (`OrderQueueProducer.enqueueProcessOrder` và `getOrderJobs`) đều có timeout `REDIS_OPERATION_TIMEOUT_MS` = 3000ms (`withTimeout`). Timeout này cần cả với API: khi tiến trình khởi động lúc Redis đang tắt, BullMQ chờ kết nối đầu tiên và mọi lệnh chờ theo, `enableOfflineQueue` không giúp được. Lệnh bị bỏ dở có thể vẫn chạy sau đó, nên chỉ dùng cho thao tác lặp lại được (đọc, hoặc `add` với `jobId` cố định).

@@ -66,7 +66,9 @@ describe('Vercel handler', () => {
     expect(expressApp).toHaveBeenCalledWith(req, first);
   });
 
-  it('answers 503 in the unified error format when the start fails, and tries again on the next request', async () => {
+  it('answers 503 in the unified error format when NestFactory.create() rejects, and starts again on the next request', async () => {
+    // The database is not ready: the DataSource fails while Nest creates the
+    // providers, so create() rejects and no app exists.
     create
       .mockRejectedValueOnce(new Error('connect ECONNREFUSED'))
       .mockResolvedValueOnce(nestApp);
@@ -92,15 +94,19 @@ describe('Vercel handler', () => {
       'Vercel',
     );
     expect(expressApp).not.toHaveBeenCalled();
+    // Nothing to close: no Redis connection was opened before the database
+    // (queue.module.spec.ts).
+    expect(nestApp.close).not.toHaveBeenCalled();
 
     const retried = createResponse();
     await handler(req, retried);
 
     expect(create).toHaveBeenCalledTimes(2);
+    expect(nestApp.init).toHaveBeenCalledTimes(1);
     expect(expressApp).toHaveBeenCalledWith(req, retried);
   });
 
-  it('closes a half-started app before the next attempt', async () => {
+  it('closes a half-started app when init() fails, before the next attempt', async () => {
     create.mockResolvedValue(nestApp);
     nestApp.init.mockRejectedValueOnce(new Error('init failed'));
 

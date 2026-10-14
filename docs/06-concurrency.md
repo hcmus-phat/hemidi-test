@@ -178,7 +178,7 @@ Nếu vẫn gặp `40P01` (không mong đợi), filter ánh xạ sang `503 SERVI
 
 - **Transaction ngắn:** không có I/O mạng nào khác trong transaction (job được relay outbox đẩy sau, ở worker), nên khóa chỉ giữ vài ms.
 - **`lock_timeout`:** tương đương `SET LOCAL lock_timeout = '5s'` (`DB_LOCK_TIMEOUT_MS`). Quá thời gian thì lỗi `55P03`, ánh xạ sang `503`, thay vì treo request vô thời hạn. Lệnh `SET` không nhận tham số (`$1`), nên code chạy `SELECT set_config('lock_timeout', $1, true)`: tham số thứ ba `true` nghĩa là chỉ áp dụng cho transaction hiện tại, giống `SET LOCAL`.
-- **Connection pool:** mỗi transaction đang chờ khóa giữ một connection. Với một sản phẩm cực "hot", request sẽ xếp hàng ở pool. Ở quy mô bài này điều đó chấp nhận được. Trên Vercel nên dùng pooled connection của Neon và `DATABASE_POOL_MAX` nhỏ.
+- **Connection pool:** mỗi transaction đang chờ khóa giữ một connection. Với một sản phẩm cực "hot", request sẽ xếp hàng ở pool. Ở quy mô bài này điều đó chấp nhận được. Request chờ connection rảnh quá 5s thì lỗi `500` thay vì treo: `pg-pool` dùng chung `connectTimeoutMS` cho việc mở kết nối mới và việc chờ connection khi pool đã đầy. Trên Vercel nên dùng pooled connection của Neon và `DATABASE_POOL_MAX` nhỏ.
 - **Nhiều instance:** khóa nằm trong DB nên vẫn đúng với bất kỳ số instance API hay worker nào.
 
 ## 9. Kiểm chứng

@@ -26,8 +26,15 @@ import { errorMessage } from './common/utils/error-message';
 let ready: Promise<RequestListener> | undefined;
 
 async function bootstrap(): Promise<RequestListener> {
-  // abortOnError: false makes a startup error (e.g. an invalid environment)
-  // reject here instead of exiting the process.
+  // abortOnError: false makes a startup error (e.g. the database not
+  // answering) reject here instead of exiting the process. An invalid
+  // environment never gets here: ConfigModule rejects it while api/index.js
+  // loads AppModule.
+  //
+  // When create() rejects, Nest returns no app, so there is nothing to
+  // close. Nothing is left open either: the DataSource gave up, and no Redis
+  // connection exists yet because QueueModule.forRoot waits for the
+  // connected DataSource before any Queue is built.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     abortOnError: false,
   });
@@ -35,7 +42,8 @@ async function bootstrap(): Promise<RequestListener> {
     configureApp(app);
     await app.init();
   } catch (error) {
-    // Release the connections of the half-started app before a retry.
+    // The app exists here: close its database and Redis connections before
+    // the next request starts again.
     await app.close().catch(() => undefined);
     throw error;
   }
@@ -47,7 +55,8 @@ async function bootstrap(): Promise<RequestListener> {
  * Starts the app once per instance. Requests that arrive during the start
  * wait for the same promise. A failed start is not cached, so a transient
  * error (e.g. the database waking up) does not break the instance for good:
- * the next request tries again.
+ * the next request tries again. A start always settles within maxDuration:
+ * DatabaseModule bounds each connection try and the number of tries.
  */
 function getApp(): Promise<RequestListener> {
   ready ??= bootstrap().catch((error: unknown) => {
