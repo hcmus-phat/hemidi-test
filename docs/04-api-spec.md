@@ -380,7 +380,7 @@ Trả `503` cùng `status: "error"` nếu một trong hai bị down.
 
 | HTTP | `error` | Khi nào | Nguồn |
 |---|---|---|---|
-| 400 | `VALIDATION_ERROR` | DTO/query sai, UUID sai, `minPrice > maxPrice`, `productId` lặp | `ValidationPipe`, `ParseUUIDPipe`, Postgres `22P02` |
+| 400 | `VALIDATION_ERROR` | DTO/query sai, UUID sai, `minPrice > maxPrice`, `productId` lặp, body không phải JSON hợp lệ | `ValidationPipe`, `ParseUUIDPipe`, body-parser, Postgres `22P02` |
 | 404 | `NOT_FOUND` | Route không tồn tại | `NotFoundException` của Nest |
 | 404 | `PRODUCT_NOT_FOUND` | Sản phẩm không tồn tại hoặc đã xóa mềm | Service |
 | 404 | `ORDER_NOT_FOUND` | Đơn không tồn tại | Service |
@@ -389,6 +389,7 @@ Trả `503` cùng `status: "error"` nếu một trong hai bị down.
 | 409 | `INVALID_ORDER_STATUS` | Hủy đơn ở trạng thái không cho phép | Service |
 | 409 | `CONFLICT` | Vi phạm ràng buộc khác (`23505`, `23503`, `23514`) chưa có mã riêng | Filter |
 | 503 | `SERVICE_UNAVAILABLE` | Hết thời gian chờ khóa (`55P03`), deadlock (`40P01`), Redis không kết nối được (chỉ ở `GET /orders/:id/jobs` và `/health`) | Filter |
+| 4xx khác | Tên HTTP status, ví dụ `PAYLOAD_TOO_LARGE` | Lỗi do Nest/Express sinh ra mà không có mã riêng, ví dụ body lớn hơn 100 KB (413) | Filter (`HttpException`, lỗi `http-errors` của body-parser) |
 | 500 | `INTERNAL_ERROR` | Lỗi không mong đợi | Filter |
 
 `AllExceptionsFilter` ánh xạ `QueryFailedError` dựa trên `driverError.code` và `driverError.constraint`. Đây là lý do tên constraint phải được đặt rõ ràng ([03 §4](03-database.md#4-ddl-tham-chiếu)).
