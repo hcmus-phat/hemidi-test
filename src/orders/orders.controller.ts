@@ -1,10 +1,33 @@
-import { Body, Controller, HttpStatus, Post } from '@nestjs/common';
-import { ApiCreatedResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ApiErrorResponse } from '../common/decorators/api-error-response.decorator';
 import { ErrorCode } from '../common/errors/error-codes';
+import { uuidParam } from '../common/pipes/uuid-param.pipe';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { OrderDetailDto } from './dto/order-response.dto';
+import { OrderDetailDto, OrderSummaryDto } from './dto/order-response.dto';
+import { PaginatedOrdersDto } from './dto/paginated-orders.dto';
+import { QueryOrdersDto } from './dto/query-orders.dto';
 import { OrdersService } from './orders.service';
+
+const ORDER_ID_PARAM = {
+  name: 'id',
+  description: 'Order id (UUID v4)',
+  format: 'uuid',
+} as const;
 
 @ApiTags('orders')
 @Controller('orders')
@@ -40,5 +63,42 @@ export class OrdersController {
   )
   async create(@Body() dto: CreateOrderDto): Promise<OrderDetailDto> {
     return OrderDetailDto.fromEntity(await this.ordersService.create(dto));
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: 'List orders',
+    description:
+      'Newest first, without items. A page beyond the last one returns an empty `data` array.',
+  })
+  @ApiOkResponse({ type: PaginatedOrdersDto })
+  @ApiErrorResponse(
+    HttpStatus.BAD_REQUEST,
+    ErrorCode.VALIDATION_ERROR,
+    'Invalid query parameter, e.g. an unknown status',
+  )
+  async findAll(@Query() query: QueryOrdersDto): Promise<PaginatedOrdersDto> {
+    const { data, meta } = await this.ordersService.findAll(query);
+    return { data: data.map((o) => OrderSummaryDto.fromEntity(o)), meta };
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get an order with its items' })
+  @ApiParam(ORDER_ID_PARAM)
+  @ApiOkResponse({ type: OrderDetailDto })
+  @ApiErrorResponse(
+    HttpStatus.BAD_REQUEST,
+    ErrorCode.VALIDATION_ERROR,
+    'id is not a UUID',
+  )
+  @ApiErrorResponse(
+    HttpStatus.NOT_FOUND,
+    ErrorCode.ORDER_NOT_FOUND,
+    'Order does not exist',
+  )
+  async findOne(
+    @Param('id', uuidParam('id')) id: string,
+  ): Promise<OrderDetailDto> {
+    return OrderDetailDto.fromEntity(await this.ordersService.findOne(id));
   }
 }

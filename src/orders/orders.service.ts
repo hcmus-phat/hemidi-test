@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
+import { paginate, Paginated } from '../common/dto/paginated-response.dto';
+import { getPaginationOffset } from '../common/dto/pagination-query.dto';
 import {
   AppException,
   InsufficientStockDetail,
@@ -14,6 +16,7 @@ import { OutboxRepository } from '../outbox/outbox.repository';
 import { Product } from '../products/entities/product.entity';
 import { ProductStockRepository } from '../products/product-stock.repository';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
+import { QueryOrdersDto } from './dto/query-orders.dto';
 import { Order } from './entities/order.entity';
 import { calculateOrderTotal } from './order-amounts';
 import { OrderStatus } from './order-status.enum';
@@ -78,6 +81,34 @@ export class OrdersService {
       });
       return order;
     });
+  }
+
+  /**
+   * Newest first, without items (A-10). A page beyond the last one returns
+   * no rows.
+   */
+  async findAll(query: QueryOrdersDto): Promise<Paginated<Order>> {
+    const [orders, total] = await this.ordersRepo.findPage(
+      this.dataSource.manager,
+      {
+        offset: getPaginationOffset(query),
+        limit: query.limit,
+        status: query.status,
+      },
+    );
+    return paginate(orders, total, query);
+  }
+
+  /** The order with its items. */
+  async findOne(orderId: string): Promise<Order> {
+    const order = await this.ordersRepo.findByIdWithItems(
+      this.dataSource.manager,
+      orderId,
+    );
+    if (!order) {
+      throw AppException.orderNotFound(orderId);
+    }
+    return order;
   }
 
   /**

@@ -36,8 +36,11 @@ describe('createSwaggerDocument', () => {
     return document.components?.schemas?.[name] as Schema;
   }
 
-  function queryParam(name: string): Record<string, unknown> {
-    const parameters = (document.paths['/products'].get?.parameters ?? []) as {
+  function queryParam(
+    name: string,
+    path = '/products',
+  ): Record<string, unknown> {
+    const parameters = (document.paths[path].get?.parameters ?? []) as {
       name: string;
       schema: Record<string, unknown>;
     }[];
@@ -46,8 +49,20 @@ describe('createSwaggerDocument', () => {
 
   it('lists every order endpoint', () => {
     expect(Object.keys(document.paths['/orders'])).toEqual(
-      expect.arrayContaining(['post']),
+      expect.arrayContaining(['get', 'post']),
     );
+    expect(Object.keys(document.paths['/orders/{id}'])).toEqual(
+      expect.arrayContaining(['get']),
+    );
+  });
+
+  it('documents the status filter of GET /orders as an enum', () => {
+    expect(document.components?.schemas?.OrderStatus).toMatchObject({
+      enum: ['PENDING', 'CONFIRMED', 'FAILED', 'CANCELLED'],
+    });
+    expect(queryParam('status', '/orders')).toEqual({
+      $ref: '#/components/schemas/OrderStatus',
+    });
   });
 
   it('lists every product endpoint', () => {
@@ -72,6 +87,7 @@ describe('createSwaggerDocument', () => {
     ['OrderItemResponseDto', 'quantity'],
     ['OrderItemResponseDto', 'lineTotal'],
     ['OrderDetailDto', 'totalAmount'],
+    ['OrderSummaryDto', 'totalAmount'],
     ['PaginationMetaDto', 'page'],
     ['PaginationMetaDto', 'totalPages'],
     ['ErrorResponseDto', 'statusCode'],

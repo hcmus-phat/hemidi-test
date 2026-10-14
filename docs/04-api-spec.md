@@ -288,7 +288,7 @@ Ví dụ thiếu hàng:
 |---|---|---|---|
 | `page` | integer | 1 | `≥ 1` |
 | `limit` | integer | 10 | 1–100 |
-| `status` | enum | | `PENDING \| CONFIRMED \| FAILED \| CANCELLED` |
+| `status` | enum | | `PENDING \| CONFIRMED \| FAILED \| CANCELLED` (phân biệt hoa thường). Giá trị khác, kể cả chuỗi rỗng (`?status=`), trả `400 VALIDATION_ERROR` |
 
 Trả `{ data: OrderSummary[], meta }`, sắp xếp `createdAt DESC, id DESC`. Danh sách không kèm items.
 
