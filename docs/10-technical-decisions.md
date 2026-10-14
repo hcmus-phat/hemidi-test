@@ -239,6 +239,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Quyết định:** `nest build` (tsc) ra `dist/`. Function `api/index.js` `require('../dist/vercel')`, app được cache theo instance. `vercel.json` rewrite mọi đường dẫn về `/api`. Swagger UI lấy asset từ CDN.
 - **Lý do:** DI của NestJS cần `emitDecoratorMetadata`, mà bundler dựa trên esbuild không sinh ra metadata này.
 - **Hệ quả:** Cần đối chiếu với tài liệu Vercel hiện hành. Nếu Vercel hỗ trợ NestJS zero-config ổn định thì có thể đơn giản hóa.
+- **Ghi nhận khi hiện thực (`src/vercel.ts`):** handler lấy app Express mà Nest tạo (`getHttpAdapter().getInstance()`) thay vì tự `import express` (không phải dependency trực tiếp). `abortOnError: false` để lỗi khởi động bị reject thay vì `process.exit()`. Promise khởi động lỗi không được cache, handler trả `503` theo định dạng thống nhất và request sau thử lại. Vercel chọn Node theo `engines.node` (xem ADR-029). Chưa deploy thật: đã kiểm tra bằng harness `http.createServer` local ([08 §4.1](08-deployment.md#41-handler-serverless)).
 
 ### ADR-026: Chính sách migration
 
@@ -275,8 +276,9 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Lý do:** Dự án mới, không có code cũ phải giữ tương thích. Bản mới nhất được hỗ trợ lâu nhất.
 - **Hệ quả:** API thay đổi giữa các major (TypeORM 0.3 → 1.x, BullMQ 5 → 6) phải được kiểm tra trên type definitions và CHANGELOG của gói đã cài, không dựa vào trí nhớ. Code mẫu trong tài liệu 02–07 chỉ mang tính minh họa. Với `attemptsMade` và job scheduler, hành vi thực tế được kiểm chứng bằng test (MT-04, UT-08/09).
 - **Ghi nhận khi scaffold (NestJS 12):**
-  - Các gói `@nestjs/*` 12 chỉ phát hành dạng **ES module** (`"type": "module"`). Dự án vẫn biên dịch ra **CommonJS** (`module: nodenext`, `package.json` không có `"type"`), vì TypeORM CLI (`typeorm-ts-node-commonjs`), handler Vercel (`require('../dist/vercel')`) và Jest đều làm việc với CommonJS. Lúc chạy, Node ≥ 22.12 `require()` được ES module (`require(esm)`), nên `engines.node` là `>=22.13`.
+  - Các gói `@nestjs/*` 12 chỉ phát hành dạng **ES module** (`"type": "module"`). Dự án vẫn biên dịch ra **CommonJS** (`module: nodenext`, `package.json` không có `"type"`), vì TypeORM CLI (`typeorm-ts-node-commonjs`), handler Vercel (`require('../dist/vercel')`) và Jest đều làm việc với CommonJS. Lúc chạy, Node ≥ 22.12 `require()` được ES module (`require(esm)`), nên `engines.node` tối thiểu là 22.13.
   - `engines.node` chỉ nói mức tối thiểu để chạy app. Các gói dev-only của Nest CLI (`@nestjs/schematics` 12, `@angular-devkit/*` 22) khai báo `node: ^22.22.3 || ^24.15.0 || >=26.0.0`, nên `npm ci` trên Node 22.13–22.22 in cảnh báo `EBADENGINE` cho chúng. Không nâng `engines.node` theo các gói này, vì app chạy được từ 22.13 và build vẫn chạy trên 22.19. Khuyến nghị dùng Node ≥ 22.22.3 khi phát triển local ([08 §2.1](08-deployment.md#21-yêu-cầu)).
+  - **Khi thêm handler Vercel (2026-10-15):** `engines.node` đổi từ `>=22.13` thành `^22.13`. Vercel dùng `engines.node` để chọn major (ưu tiên hơn cài đặt của project) và map khoảng mở `>=22.13` sang 24.x mới nhất. Giới hạn ở 22 để Vercel và Railway chạy cùng major với môi trường đã build và test (Node 22.19). Đánh đổi: phát triển trên Node 24 thì `npm ci` in cảnh báo `EBADENGINE` cho chính dự án (chỉ là cảnh báo).
   - Jest dùng hệ module CommonJS riêng và chỉ `require()` được ES module từ Node 24.9. Để chạy test trên Node 22, `jest.config.js` cho Jest chuyển các gói `@nestjs/*` sang CommonJS bằng `test/esm-to-cjs.transformer.js` (dùng `ts.transpileModule`). Transformer thay `import.meta.url` bằng URL của file và bỏ các dòng tự khai báo lại `require`/`__filename`/`__dirname` (ví dụ `const require = createRequire(import.meta.url)` trong `@nestjs/swagger`), vì trong CommonJS các biến này đã có sẵn. Code production không đi qua transformer này.
   - Không dùng Vitest (mặc định của template ESM của NestJS 12): `npm install vitest` với npm 10.9 bị lỗi `Cannot read properties of null (reading 'edgesOut')` do chuỗi peer dependency tùy chọn của Vite 8. Lint dùng ESLint theo kế hoạch, không dùng oxlint của template.
   - TypeScript 6.0 (`~6.0`): `@nestjs/cli` 12 khóa `~6.0.2`, typescript-eslint hỗ trợ `<6.1`, ts-jest hỗ trợ `<7`. `tsconfig` bật `isolatedModules` (ts-jest yêu cầu khi dùng `nodenext`), nên kiểu chỉ dùng trong chữ ký có decorator phải `import type`.
@@ -292,6 +294,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-029: `engines.node` từ `>=22.13` thành `^22.13`, để Vercel chạy function trên Node 22.x thay vì 24.x. ADR-025: ghi nhận cách hiện thực handler (`getInstance()`, không cache lỗi khởi động) |
 | 2026-10-15 | ADR-011: ghi nhận ngoại lệ của `GET /health`: `503` giữ body `{ status, checks }` thay vì định dạng lỗi chung |
 | 2026-10-15 | ADR-003: relay lấy `orderId` từ `aggregate_id` thay vì `payload.orderId`. Payload `jsonb` không được DB kiểm tra, một sự kiện có payload sai sẽ bị lấy lại ở đầu mọi lô và có thể chặn các sự kiện phía sau |
 | 2026-10-15 | ADR-029: ghi nhận BullMQ 6 cần cài `ioredis` riêng (chọn 5.x vì peer của TypeORM 1.1), connection options riêng cho API và worker, ngữ nghĩa `attemptsMade` và công thức backoff đã kiểm tra trong mã nguồn BullMQ |

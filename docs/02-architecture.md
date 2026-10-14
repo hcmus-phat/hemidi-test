@@ -29,7 +29,7 @@ flowchart LR
 
 | | API | Worker |
 |---|---|---|
-| Entry point | `src/main.ts` (local/Docker), `api/index.ts` (Vercel) | `src/worker.ts` |
+| Entry point | `src/main.ts` (local/Docker), `api/index.js` → `dist/vercel.js` (Vercel, từ `src/vercel.ts`) | `src/worker.ts` |
 | Bootstrap | `NestFactory.create(AppModule)` | `NestFactory.createApplicationContext(WorkerModule)` |
 | Module gốc | `AppModule` | `WorkerModule` |
 | BullMQ | `Queue`: chỉ `getJob` (đọc trạng thái) | `Queue.add` (relay outbox), `Worker` (`@Processor`), `upsertJobScheduler` |
@@ -43,7 +43,7 @@ flowchart LR
 
 | Hạng mục | Lựa chọn | Ghi chú |
 |---|---|---|
-| Runtime | Node.js 22 LTS (≥ 22.13) | TypeORM 1.x yêu cầu `^20.19 \|\| ^22.13 \|\| >=24.11`. NestJS 12 chỉ phát hành dạng ES module, còn dự án biên dịch ra CommonJS và dựa vào `require(esm)` có sẵn từ Node 22.12 ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)). Nest CLI (dev-only) khai báo Node ≥ 22.22.3, trên bản cũ hơn `npm ci` chỉ in cảnh báo `EBADENGINE` ([08 §2.1](08-deployment.md#21-yêu-cầu)) |
+| Runtime | Node.js 22 LTS (`engines.node`: `^22.13`) | Giới hạn ở major 22 để Vercel và Railway deploy cùng major đã test ([08 §4.1](08-deployment.md#41-handler-serverless)). TypeORM 1.x yêu cầu `^20.19 \|\| ^22.13 \|\| >=24.11`. NestJS 12 chỉ phát hành dạng ES module, còn dự án biên dịch ra CommonJS và dựa vào `require(esm)` có sẵn từ Node 22.12 ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)). Nest CLI (dev-only) khai báo Node ≥ 22.22.3, trên bản cũ hơn `npm ci` chỉ in cảnh báo `EBADENGINE` ([08 §2.1](08-deployment.md#21-yêu-cầu)) |
 | Framework | NestJS 12 | `@nestjs/config`, `@nestjs/typeorm`, `@nestjs/bullmq`, `@nestjs/swagger` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
 | ORM | TypeORM 1.x | `synchronize: false`, migration bằng TypeORM CLI |
 | DB | PostgreSQL 16 (local), Neon (production) | `gen_random_uuid()` có sẵn từ PG13 |
@@ -58,14 +58,17 @@ flowchart LR
 ```text
 .
 ├── api/
-│   └── index.ts                      # Handler cho Vercel: tạo Nest app một lần rồi cache lại
+│   └── index.js                      # Function của Vercel: export handler của dist/vercel.js
+├── public/
+│   └── .gitkeep                      # Thư mục output rỗng mà Vercel (preset Other) yêu cầu
 ├── src/
 │   ├── main.ts                       # Bootstrap HTTP (local)
+│   ├── vercel.ts                     # Handler serverless: tạo Nest app một lần mỗi instance, không listen(), lỗi khởi động không bị cache
 │   ├── worker.ts                     # Bootstrap worker (không HTTP), shutdown hooks + exitIfShutdownHangs
 │   ├── app.module.ts                 # Module gốc của API
 │   ├── worker.module.ts              # Module gốc của worker (chứa processor + scheduler)
 │   ├── bootstrap/
-│   │   ├── configure-app.ts          # ValidationPipe, exception filter, Swagger (dùng chung main.ts và api/index.ts)
+│   │   ├── configure-app.ts          # ValidationPipe, exception filter, Swagger (dùng chung main.ts, vercel.ts và test e2e)
 │   │   ├── swagger.ts                # DocumentBuilder, /api/docs, asset Swagger UI từ CDN
 │   │   └── shutdown-watchdog.ts      # exitIfShutdownHangs(): sau SIGTERM/SIGINT, quá 10s chưa tắt xong thì exit(1) (API và worker)
 │   ├── config/
@@ -159,7 +162,7 @@ flowchart LR
 ├── .env.test                              # Env của test e2e: giá trị mặc định của docker-compose, không có secret
 ├── docker-compose.yml
 ├── .env.example
-├── vercel.json
+├── vercel.json                       # buildCommand, function api/index.js (includeFiles dist/**), rewrite mọi path về /api
 └── README.md
 ```
 
@@ -213,7 +216,7 @@ flowchart LR
   F --> Res["Response lỗi thống nhất"]
 ```
 
-Các thành phần dùng chung (khai báo trong `configure-app.ts` để `main.ts` và `api/index.ts` giống hệt nhau):
+Các thành phần dùng chung (khai báo trong `configure-app.ts` để `main.ts`, `vercel.ts` và test e2e giống hệt nhau):
 
 - `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, exceptionFactory })`. `exceptionFactory` làm phẳng lỗi lồng nhau thành `details: [{ field: 'items.0.quantity', messages: [...] }]`. Pipe được tạo bởi `createValidationPipe()` (`common/pipes/validation.pipe.ts`). Unit test của DTO cũng gọi hàm này, nên luôn test đúng cấu hình production.
 - `AllExceptionsFilter`: chuyển `AppException`, `HttpException`, `QueryFailedError` (theo mã lỗi Postgres) và lỗi không xác định về [định dạng lỗi thống nhất](04-api-spec.md#2-định-dạng-lỗi-thống-nhất).
