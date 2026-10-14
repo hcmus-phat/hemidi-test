@@ -47,6 +47,23 @@ describe('QueryProductsDto', () => {
     ]);
   });
 
+  it('rejects an empty maxPrice instead of filtering on price <= 0', async () => {
+    const error = await parse({ minPrice: '100', maxPrice: '' });
+
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).details).toEqual([
+      {
+        field: 'maxPrice',
+        messages: expect.arrayContaining([
+          'maxPrice must be an integer number',
+        ]),
+      },
+    ]);
+    expect(JSON.stringify((error as AppException).details)).not.toContain(
+      'greater than or equal to minPrice',
+    );
+  });
+
   it('reports an invalid minPrice only on minPrice', async () => {
     const error = await parse({ minPrice: 'abc', maxPrice: '5' });
 
@@ -68,6 +85,11 @@ describe('QueryProductsDto', () => {
     ['minPrice', '-1'],
     ['minPrice', '1.5'],
     ['minPrice', 'abc'],
+    ['minPrice', ''],
+    ['minPrice', '  '],
+    ['maxPrice', ''],
+    ['maxPrice', '0x10'],
+    ['maxPrice', '1e3'],
     ['maxPrice', '9007199254740992'],
     ['search', 'x'.repeat(101)],
     ['search', ['a', 'b']],

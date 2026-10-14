@@ -88,7 +88,7 @@ flowchart LR
 │   │   │   ├── pagination-query.dto.ts
 │   │   │   ├── paginated-response.dto.ts
 │   │   │   ├── error-response.dto.ts      # Định dạng lỗi thống nhất (Swagger và kiểu của filter)
-│   │   │   └── string-transforms.ts       # trim, chữ hoa, chữ thường cho @Transform
+│   │   │   └── string-transforms.ts       # @Transform: trim, chữ hoa, chữ thường, chuỗi số → number (toNumberIfDecimal)
 │   │   ├── pipes/
 │   │   │   ├── validation.pipe.ts         # createValidationPipe(): ValidationPipe toàn cục, dùng chung với unit test DTO
 │   │   │   └── uuid-param.pipe.ts         # uuidParam('id'): ParseUUIDPipe trả lỗi VALIDATION_ERROR có details

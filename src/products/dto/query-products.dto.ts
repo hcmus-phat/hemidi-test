@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsInt,
   IsOptional,
@@ -9,7 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
-import { trim } from '../../common/dto/string-transforms';
+import { toNumberIfDecimal, trim } from '../../common/dto/string-transforms';
 import { IsGreaterThanOrEqualTo } from '../../common/validators/is-greater-than-or-equal-to.decorator';
 
 /** Keeps price filters inside the range Postgres `bigint` and JS numbers share. */
@@ -35,7 +35,7 @@ export class QueryProductsDto extends PaginationQueryDto {
     example: 100000,
   })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(toNumberIfDecimal)
   @IsInt()
   @Min(0)
   @Max(MAX_PRICE_FILTER)
@@ -48,7 +48,7 @@ export class QueryProductsDto extends PaginationQueryDto {
     example: 300000,
   })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(toNumberIfDecimal)
   @IsInt()
   @Min(0)
   @Max(MAX_PRICE_FILTER)

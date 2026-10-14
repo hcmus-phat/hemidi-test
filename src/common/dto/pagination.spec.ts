@@ -35,7 +35,10 @@ describe('PaginationQueryDto', () => {
     ['page', '0', 'page must not be less than 1'],
     ['page', '1.5', 'page must be an integer number'],
     ['page', 'abc', 'page must be an integer number'],
-    ['page', '', 'page must not be less than 1'],
+    ['page', '', 'page must be an integer number'],
+    ['page', ' ', 'page must be an integer number'],
+    ['limit', '0x10', 'limit must be an integer number'],
+    ['limit', '1e1', 'limit must be an integer number'],
     ['page', '1000001', 'page must not be greater than 1000000'],
   ])('rejects %s=%j with a VALIDATION_ERROR', async (field, value, message) => {
     const error = await parse({ [field]: value });

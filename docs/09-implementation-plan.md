@@ -25,7 +25,7 @@
 
 - [ ] Migration `CreateProducts` (CHECK, partial unique SKU, index)
 - [ ] Entity `Product` (`@DeleteDateColumn`, `price` kiểu `bigint` với `BigIntTransformer`)
-- [ ] DTO: create (trim, chữ in hoa cho SKU, `price` dùng `@IsInt()`), update (`PartialType`), query (`@Type(() => Number)`, kiểm tra `minPrice ≤ maxPrice`)
+- [ ] DTO: create (trim, chữ in hoa cho SKU, `price` dùng `@IsInt()`), update (`PartialType`), query (chuyển chuỗi số sang number bằng `toNumberIfDecimal`, chuỗi rỗng bị từ chối, kiểm tra `minPrice ≤ maxPrice`)
 - [ ] `ProductsService` và `ProductsController` (CRUD, xóa mềm, `ILIKE` có escape, phân trang)
 - [ ] Swagger: `@ApiProperty` kèm ví dụ, response lỗi
 - [ ] Test thủ công MT-01, MT-02

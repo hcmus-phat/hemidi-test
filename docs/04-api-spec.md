@@ -130,7 +130,7 @@ Lỗi 5xx chỉ trả `message: "Internal server error"`. Stack trace và câu S
 | `minPrice` | integer | | `≥ 0` (VND) |
 | `maxPrice` | integer | | `≥ 0` (VND). Nếu có cả hai thì `minPrice ≤ maxPrice`, sai thì `details: [{ field: 'maxPrice', messages: ['maxPrice must be greater than or equal to minPrice'] }]` |
 
-Query param nhận vào là string, cần `@Type(() => Number)` để chuyển kiểu. `minPrice`/`maxPrice` tối đa `Number.MAX_SAFE_INTEGER` để luôn nằm trong `bigint`. Query param lạ bị từ chối (`400`, giống field lạ trong body). Sắp xếp `createdAt DESC, id DESC`.
+Query param nhận vào là string. `@Transform(toNumberIfDecimal)` chỉ chuyển chuỗi số thập phân thông thường (`10`, `-1`, `1.5`) thành number. Giá trị khác, kể cả chuỗi rỗng (`?maxPrice=`), `0x10` hay `1e3`, giữ nguyên là string nên `@IsInt()` trả `400 VALIDATION_ERROR`. Không dùng `@Type(() => Number)` vì `Number('')` là `0`: `?maxPrice=` sẽ âm thầm thành bộ lọc `price <= 0`. `minPrice`/`maxPrice` tối đa `Number.MAX_SAFE_INTEGER` để luôn nằm trong `bigint`. Query param lạ bị từ chối (`400`, giống field lạ trong body). Sắp xếp `createdAt DESC, id DESC`.
 
 ```http
 GET /products?page=1&limit=2&search=áo&minPrice=100000&maxPrice=300000

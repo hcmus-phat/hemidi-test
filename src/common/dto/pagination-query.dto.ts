@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { IsInt, Max, Min } from 'class-validator';
+import { toNumberIfDecimal } from './string-transforms';
 
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_LIMIT = 10;
@@ -9,8 +10,9 @@ export const MAX_LIMIT = 100;
 export const MAX_PAGE = 1_000_000;
 
 /**
- * `?page=&limit=` shared by every list endpoint. Query values arrive as strings,
- * so `@Type(() => Number)` converts them before validation.
+ * `?page=&limit=` shared by every list endpoint. Query values arrive as strings:
+ * `toNumberIfDecimal` converts plain numbers and leaves anything else (such as
+ * an empty `?page=`) for `@IsInt()` to reject.
  */
 export class PaginationQueryDto {
   @ApiPropertyOptional({
@@ -20,7 +22,7 @@ export class PaginationQueryDto {
     default: DEFAULT_PAGE,
     example: 1,
   })
-  @Type(() => Number)
+  @Transform(toNumberIfDecimal)
   @IsInt()
   @Min(1)
   @Max(MAX_PAGE)
@@ -33,7 +35,7 @@ export class PaginationQueryDto {
     default: DEFAULT_LIMIT,
     example: 10,
   })
-  @Type(() => Number)
+  @Transform(toNumberIfDecimal)
   @IsInt()
   @Min(1)
   @Max(MAX_LIMIT)
