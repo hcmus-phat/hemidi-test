@@ -30,8 +30,10 @@ export class QueryProductsDto extends PaginationQueryDto {
   search?: string;
 
   @ApiPropertyOptional({
+    type: 'integer',
     description: 'Minimum price in VND (inclusive)',
     minimum: 0,
+    maximum: MAX_PRICE_FILTER,
     example: 100000,
   })
   @IsOptional()
@@ -42,9 +44,11 @@ export class QueryProductsDto extends PaginationQueryDto {
   minPrice?: number;
 
   @ApiPropertyOptional({
+    type: 'integer',
     description:
       'Maximum price in VND (inclusive). Must not be lower than minPrice.',
     minimum: 0,
+    maximum: MAX_PRICE_FILTER,
     example: 300000,
   })
   @IsOptional()

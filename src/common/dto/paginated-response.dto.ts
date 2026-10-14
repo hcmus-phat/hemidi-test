@@ -2,19 +2,20 @@ import { ApiProperty } from '@nestjs/swagger';
 import type { PaginationQueryDto } from './pagination-query.dto';
 
 export class PaginationMetaDto {
-  @ApiProperty({ example: 1 })
+  @ApiProperty({ type: 'integer', example: 1 })
   page: number;
 
-  @ApiProperty({ example: 10 })
+  @ApiProperty({ type: 'integer', example: 10 })
   limit: number;
 
   @ApiProperty({
+    type: 'integer',
     description: 'Number of items matching the query',
     example: 7,
   })
   total: number;
 
-  @ApiProperty({ example: 1 })
+  @ApiProperty({ type: 'integer', example: 1 })
   totalPages: number;
 }
 

@@ -6,7 +6,11 @@ import type { ErrorDetail } from '../errors/app.exception';
  * (docs/04 §2). Also used as the Swagger schema of error responses.
  */
 export class ErrorResponseDto {
-  @ApiProperty({ description: 'HTTP status code', example: 409 })
+  @ApiProperty({
+    type: 'integer',
+    description: 'HTTP status code',
+    example: 409,
+  })
   statusCode: number;
 
   @ApiProperty({

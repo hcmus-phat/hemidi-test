@@ -15,10 +15,14 @@ export class ProductResponseDto {
   @ApiProperty({ example: 'Áo thun trắng size M' })
   name: string;
 
-  @ApiProperty({ description: 'Price in VND', example: 199000 })
+  @ApiProperty({
+    type: 'integer',
+    description: 'Price in VND',
+    example: 199000,
+  })
   price: number;
 
-  @ApiProperty({ example: 50 })
+  @ApiProperty({ type: 'integer', example: 50 })
   stock: number;
 
   @ApiProperty({ format: 'date-time', example: '2026-10-14T03:00:00.000Z' })

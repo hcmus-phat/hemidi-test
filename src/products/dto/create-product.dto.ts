@@ -4,6 +4,11 @@ import { IsInt, IsString, Length, Matches, Max, Min } from 'class-validator';
 import { trim, trimAndUpperCase } from '../../common/dto/string-transforms';
 
 export const SKU_PATTERN = /^[A-Z0-9_-]+$/;
+/**
+ * The SKU a client may send, for Swagger: lower case is accepted because the
+ * DTO upper-cases the value before it checks SKU_PATTERN.
+ */
+const SKU_INPUT_PATTERN = '^[A-Za-z0-9_-]+$';
 /** Upper bounds keep every order total far below Number.MAX_SAFE_INTEGER (docs/03 §5). */
 export const MAX_PRICE = 1_000_000_000;
 export const MAX_STOCK = 1_000_000;
@@ -15,7 +20,7 @@ export class CreateProductDto {
     example: 'TSHIRT-WHITE-M',
     minLength: 1,
     maxLength: 64,
-    pattern: SKU_PATTERN.source,
+    pattern: SKU_INPUT_PATTERN,
   })
   @Transform(trimAndUpperCase)
   @IsString()
@@ -37,6 +42,7 @@ export class CreateProductDto {
   name: string;
 
   @ApiProperty({
+    type: 'integer',
     description: 'Price in VND, an integer',
     example: 199000,
     minimum: 0,
@@ -48,6 +54,7 @@ export class CreateProductDto {
   price: number;
 
   @ApiProperty({
+    type: 'integer',
     description: 'Units in stock',
     example: 50,
     minimum: 0,

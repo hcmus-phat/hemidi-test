@@ -1,5 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import {
+  DocumentBuilder,
+  type OpenAPIObject,
+  SwaggerModule,
+} from '@nestjs/swagger';
 
 export const SWAGGER_PATH = 'api/docs';
 
@@ -11,8 +15,8 @@ export const SWAGGER_PATH = 'api/docs';
 const SWAGGER_UI_CDN =
   'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.29.1';
 
-/** Serves the UI at /api/docs and the OpenAPI JSON at /api/docs-json. */
-export function setupSwagger(app: INestApplication): void {
+/** The OpenAPI document of every controller registered in `app`. */
+export function createSwaggerDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle('Mini Order Management API')
     .setDescription(
@@ -25,23 +29,22 @@ export function setupSwagger(app: INestApplication): void {
     .setVersion('1.0')
     .addTag('products', 'Product catalog and stock')
     .build();
+  return SwaggerModule.createDocument(app, config);
+}
 
+/** Serves the UI at /api/docs and the OpenAPI JSON at /api/docs-json. */
+export function setupSwagger(app: INestApplication): void {
   // A factory defers building the document until it is first requested,
   // which keeps serverless cold starts short.
-  SwaggerModule.setup(
-    SWAGGER_PATH,
-    app,
-    () => SwaggerModule.createDocument(app, config),
-    {
-      jsonDocumentUrl: `${SWAGGER_PATH}-json`,
-      raw: ['json'],
-      customSiteTitle: 'Mini Order Management API',
-      customCssUrl: `${SWAGGER_UI_CDN}/swagger-ui.min.css`,
-      customJs: [
-        `${SWAGGER_UI_CDN}/swagger-ui-bundle.min.js`,
-        `${SWAGGER_UI_CDN}/swagger-ui-standalone-preset.min.js`,
-      ],
-      swaggerOptions: { displayRequestDuration: true },
-    },
-  );
+  SwaggerModule.setup(SWAGGER_PATH, app, () => createSwaggerDocument(app), {
+    jsonDocumentUrl: `${SWAGGER_PATH}-json`,
+    raw: ['json'],
+    customSiteTitle: 'Mini Order Management API',
+    customCssUrl: `${SWAGGER_UI_CDN}/swagger-ui.min.css`,
+    customJs: [
+      `${SWAGGER_UI_CDN}/swagger-ui-bundle.min.js`,
+      `${SWAGGER_UI_CDN}/swagger-ui-standalone-preset.min.js`,
+    ],
+    swaggerOptions: { displayRequestDuration: true },
+  });
 }

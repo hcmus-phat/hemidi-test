@@ -400,6 +400,9 @@ Trả `503` cùng `status: "error"` nếu một trong hai bị down.
 
 - `@ApiTags('products' | 'orders' | 'health')`, `@ApiOperation({ summary })` cho mọi endpoint.
 - Mọi DTO có `@ApiProperty` hoặc `@ApiPropertyOptional` kèm `example`, `minimum`, `maximum`, `enum`.
+- Field số nguyên (tiền, số lượng, `page`, `limit`, `meta`) khai báo `type: 'integer'`. Dự án không bật plugin CLI của `@nestjs/swagger`, nên kiểu TypeScript `number` mặc định thành `"type": "number"` và Swagger sẽ cho phép `1.5`.
+- `pattern` trong Swagger mô tả giá trị client được gửi. SKU được chuyển thành chữ in hoa trước khi validate, nên Swagger ghi `^[A-Za-z0-9_-]+$`, còn `@Matches` kiểm tra `^[A-Z0-9_-]+$` sau khi chuyển.
+- `src/bootstrap/swagger.spec.ts` sinh tài liệu OpenAPI và kiểm tra các quy tắc trên.
 - Khai báo response lỗi bằng `@ApiResponse({ status, type: ErrorResponseDto })` cho các mã ở bảng trên, qua decorator `@ApiErrorResponse(HttpStatus.NOT_FOUND, ErrorCode.PRODUCT_NOT_FOUND, 'Product does not exist or was deleted')` (`src/common/decorators/api-error-response.decorator.ts`). Mỗi decorator ứng với một status và ghi rõ mã lỗi trong mô tả.
 - Response phân trang có schema rõ ràng (`PaginatedProductsDto`, `PaginatedOrdersDto`).
 - Truy cập được tại `/api/docs` trên bản deploy. Asset UI tải từ CDN ([08 §4.3](08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)).

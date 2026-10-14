@@ -16,6 +16,7 @@ export const MAX_PAGE = 1_000_000;
  */
 export class PaginationQueryDto {
   @ApiPropertyOptional({
+    type: 'integer',
     description: 'Page number, starting at 1',
     minimum: 1,
     maximum: MAX_PAGE,
@@ -29,6 +30,7 @@ export class PaginationQueryDto {
   page: number = DEFAULT_PAGE;
 
   @ApiPropertyOptional({
+    type: 'integer',
     description: 'Items per page',
     minimum: 1,
     maximum: MAX_LIMIT,
