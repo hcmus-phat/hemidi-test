@@ -111,6 +111,8 @@ export class OrderProcessingProcessor
     switch (job.name as OrderJobName) {
       case OrderJobName.ProcessOrder:
         return this.processOrder(job as Job<ProcessOrderJobData>);
+      case OrderJobName.ExpirePendingOrders:
+        return this.expirePendingOrders();
       default:
         // Retrying cannot help with a job this worker does not know.
         throw new UnrecoverableError(`Unknown job name: ${job.name}`);
@@ -177,6 +179,16 @@ export class OrderProcessingProcessor
       // BullMQ records the error as the job's failedReason and moves it to failed.
       throw error;
     }
+  }
+
+  /**
+   * The repeatable job of the scheduler: cancels the orders that stayed
+   * PENDING too long (docs/05 §9). No simulated failure here.
+   */
+  private async expirePendingOrders(): Promise<{ expired: number }> {
+    const result = await this.ordersService.expireStaleOrders();
+    this.logger.log(`Expired ${result.expired} stale PENDING order(s)`);
+    return result;
   }
 
   /**

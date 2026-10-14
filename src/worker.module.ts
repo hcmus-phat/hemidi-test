@@ -8,6 +8,7 @@ import { OrdersModule } from './orders/orders.module';
 import { OutboxRelayService } from './outbox/outbox-relay.service';
 import { OutboxModule } from './outbox/outbox.module';
 import { FailureSimulator } from './queue/failure-simulator';
+import { OrderJobsScheduler } from './queue/order-jobs.scheduler';
 import { OrderProcessingProcessor } from './queue/order-processing.processor';
 import { QueueModule } from './queue/queue.module';
 import { RedisConnectionRole } from './queue/redis-connection';
@@ -19,6 +20,7 @@ import { RedisConnectionRole } from './queue/redis-connection';
  *
  * - OutboxRelayService turns ORDER_CREATED events into jobs.
  * - OrderProcessingProcessor runs a BullMQ Worker that processes them.
+ * - OrderJobsScheduler schedules the job that expires stale PENDING orders.
  */
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { RedisConnectionRole } from './queue/redis-connection';
   providers: [
     OutboxRelayService,
     OrderProcessingProcessor,
+    OrderJobsScheduler,
     FailureSimulator,
     Sleeper,
     { provide: RANDOM_SOURCE, useValue: Math.random },

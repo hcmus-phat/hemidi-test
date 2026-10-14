@@ -138,9 +138,10 @@ flowchart LR
 │   │   ├── redis-error-logger.ts          # Listener 'error' cho Queue/Worker, không lặp log khi Redis tắt
 │   │   ├── order-queue.producer.ts        # enqueueProcessOrder() (relay gọi), getOrderJobs() (API gọi)
 │   │   ├── order-processing.processor.ts  # WorkerHost, chỉ có trong WorkerModule; đặt concurrency, đóng Worker ở onModuleDestroy
-│   │   ├── order-jobs.scheduler.ts        # upsertJobScheduler khi worker khởi động
+│   │   ├── order-jobs.scheduler.ts        # upsertJobScheduler khi worker khởi động (không await, không chặn khởi động khi Redis tắt)
 │   │   └── failure-simulator.ts           # maybeFail(): ném SimulatedFailureError với xác suất JOB_FAILURE_RATE (RANDOM_SOURCE)
 │   ├── scripts/                           # Lệnh dev chạy bằng ts-node, dùng AppModule (không có worker/relay)
+│   │   ├── expire-now.ts                  # npm run job:expire-now: chạy expireStaleOrders() một lần (MT-09)
 │   │   └── requeue-order.ts               # npm run job:requeue -- <orderId>: xóa rồi đẩy lại job order-<id> (MT-08)
 │   └── health/
 │       └── health.controller.ts           # GET /health

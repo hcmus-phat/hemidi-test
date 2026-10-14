@@ -157,6 +157,39 @@ export class OrdersRepository {
   }
 
   /**
+   * Ids of the orders still PENDING more than `olderThanMinutes` after they
+   * were created, oldest first, at most `limit` of them:
+   *
+   *   SELECT id FROM orders
+   *    WHERE status = 'PENDING'
+   *      AND created_at < now() - make_interval(mins => :olderThanMinutes)
+   *    ORDER BY created_at
+   *    LIMIT :limit
+   *
+   * The cutoff uses the database clock, the one that wrote created_at: the
+   * clock of the worker's machine may differ. Served by
+   * idx_orders_status_created_at.
+   */
+  async findStalePendingIds(
+    manager: EntityManager,
+    olderThanMinutes: number,
+    limit: number,
+  ): Promise<string[]> {
+    const rows = await manager
+      .createQueryBuilder(Order, 'order')
+      .select('order.id', 'id')
+      .where('order.status = :status', { status: OrderStatus.PENDING })
+      .andWhere(
+        'order.createdAt < now() - make_interval(mins => :olderThanMinutes)',
+        { olderThanMinutes },
+      )
+      .orderBy('order.createdAt', 'ASC')
+      .limit(limit)
+      .getRawMany<{ id: string }>();
+    return rows.map((row) => row.id);
+  }
+
+  /**
    * Items whose stock goes back when the order ends, by ascending product id:
    * the order in which products are locked everywhere (docs/06 §5).
    */

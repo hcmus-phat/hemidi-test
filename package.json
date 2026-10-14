@@ -27,6 +27,7 @@
     "migration:revert": "npm run typeorm -- migration:revert",
     "migration:show": "npm run typeorm -- migration:show",
     "migration:run:prod": "typeorm -d dist/database/data-source.js migration:run",
+    "job:expire-now": "ts-node src/scripts/expire-now.ts",
     "job:requeue": "ts-node src/scripts/requeue-order.ts",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",

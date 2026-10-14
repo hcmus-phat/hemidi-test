@@ -26,6 +26,7 @@ describe('OrderProcessingProcessor', () => {
     getStatus: jest.fn(),
     confirmOrder: jest.fn(),
     failOrder: jest.fn(),
+    expireStaleOrders: jest.fn(),
   };
   const failureSimulator = { maybeFail: jest.fn() };
   const sleeper = { sleep: jest.fn() };
@@ -216,6 +217,17 @@ describe('OrderProcessingProcessor', () => {
 
       expect(ordersService.failOrder).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('runs the expiry for an expire-pending-orders job, without simulated work or failures', async () => {
+    ordersService.expireStaleOrders.mockResolvedValue({ expired: 3 });
+    const job = { name: 'expire-pending-orders', data: {} } as Job;
+
+    await expect(processor.process(job)).resolves.toEqual({ expired: 3 });
+
+    expect(ordersService.expireStaleOrders).toHaveBeenCalledTimes(1);
+    expect(sleeper.sleep).not.toHaveBeenCalled();
+    expect(failureSimulator.maybeFail).not.toHaveBeenCalled();
   });
 
   it('fails without retry for a job name it does not know', async () => {

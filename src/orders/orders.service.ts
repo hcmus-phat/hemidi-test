@@ -279,6 +279,61 @@ export class OrdersService {
   }
 
   /**
+   * Cancels the orders that stayed PENDING longer than
+   * ORDER_PENDING_TTL_MINUTES and gives their stock back (FR-Q06,
+   * docs/05 §9). Run by the expire-pending-orders job every 5 minutes, and
+   * by `npm run job:expire-now`.
+   *
+   * At most EXPIRE_BATCH_SIZE orders per run, oldest first, each in its own
+   * transaction: CAS PENDING -> CANCELLED (cancel_reason EXPIRED,
+   * cancelled_at = now()), then the stock release. An order that was
+   * confirmed or cancelled meanwhile loses the CAS and is left alone. An
+   * error on one order rolls back that order only; it is logged, and the
+   * next run tries again.
+   */
+  async expireStaleOrders(): Promise<{ expired: number }> {
+    const orderIds = await this.ordersRepo.findStalePendingIds(
+      this.dataSource.manager,
+      this.config.pendingTtlMinutes,
+      this.config.expireBatchSize,
+    );
+
+    let expired = 0;
+    for (const orderId of orderIds) {
+      try {
+        if (await this.expireOrder(orderId)) {
+          expired++;
+        }
+      } catch (error) {
+        this.logger.error(
+          `Could not expire order ${orderId}: ${errorMessage(error)}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
+    return { expired };
+  }
+
+  /** One expired order, in its own transaction. False when the CAS did not match. */
+  private expireOrder(orderId: string): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const order = await this.ordersRepo.transitionStatus(
+        manager,
+        orderId,
+        [OrderStatus.PENDING],
+        OrderStatus.CANCELLED,
+        { cancelReason: CancelReason.EXPIRED },
+      );
+      if (!order) {
+        return false;
+      }
+
+      await this.releaseStock(manager, orderId);
+      return true;
+    });
+  }
+
+  /**
    * Gives back the stock of every item of an order: one UPDATE per item, by
    * ascending product id, the order in which products are always locked
    * (docs/05 §2.2, docs/06 §5). A single UPDATE ... FROM order_items would
@@ -287,8 +342,7 @@ export class OrdersService {
    *
    * Only call it in the transaction of a successful CAS into a final status
    * (ADR-015): an order leaves PENDING/CONFIRMED once, so its stock is given
-   * back at most once. Used by cancel and failOrder, and by the worker's
-   * expiry job through this service.
+   * back at most once. Used by cancel, failOrder and expireStaleOrders.
    */
   private async releaseStock(
     manager: EntityManager,

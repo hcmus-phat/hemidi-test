@@ -33,7 +33,7 @@ stateDiagram-v2
 | `PENDING` | `CONFIRMED` | Job `process-order` thành công | `status = 'PENDING'` | Insert `notification_logs` (`ORDER_CONFIRMED`) `ON CONFLICT DO NOTHING` | `confirmed_at` |
 | `PENDING` | `FAILED` | Job lỗi ở lần thử cuối | `status = 'PENDING'` | Hoàn kho | `failure_reason`, `failed_at` |
 | `PENDING`, `CONFIRMED` | `CANCELLED` | `PATCH /orders/:id/cancel` | `status IN ('PENDING','CONFIRMED')` | Hoàn kho | `cancel_reason = CUSTOMER_REQUEST`, `cancelled_at` |
-| `PENDING` | `CANCELLED` | Job `expire-pending-orders` | `status = 'PENDING' AND created_at < cutoff` | Hoàn kho | `cancel_reason = EXPIRED`, `cancelled_at` |
+| `PENDING` | `CANCELLED` | Job `expire-pending-orders` | `status = 'PENDING'` (đơn được chọn trước bằng `created_at < now() − TTL`, cột này không bao giờ đổi) | Hoàn kho | `cancel_reason = EXPIRED`, `cancelled_at` |
 
 `FAILED` và `CANCELLED` là trạng thái cuối. Mọi chuyển trạng thái có hoàn kho đều xuất phát từ `PENDING` hoặc `CONFIRMED` và đều đi đến trạng thái cuối. Do đó **mỗi đơn được hoàn kho tối đa một lần**.
 
@@ -521,6 +521,14 @@ async expireStaleOrders(): Promise<{ expired: number }> {
   return { expired };
 }
 ```
+
+Code thật (`OrdersService.expireStaleOrders`, `OrdersRepository.findStalePendingIds`, `src/queue/order-jobs.scheduler.ts`) khác mẫu trên ở các điểm sau:
+
+- **Mốc thời gian tính bằng đồng hồ DB:** truy vấn chọn đơn là `created_at < now() - make_interval(mins => $ttl)`, không tính `cutoff` bằng `Date.now()` của Node. `created_at` do Postgres ghi, còn đồng hồ của máy chạy worker có thể lệch (máy ảo Docker lúc code lệch khoảng 14s).
+- **Lỗi ở một đơn:** được bắt, ghi log `ERROR`, rồi chuyển sang đơn tiếp theo. Kết quả `{ expired }` chỉ đếm các đơn đã hủy được. Lần chạy sau (5 phút) thử lại đơn lỗi.
+- **Đăng ký scheduler không chặn khởi động:** `onApplicationBootstrap` gọi `upsertJobScheduler` mà không `await`. Khi Redis đang tắt, BullMQ chờ Redis và worker vẫn khởi động bình thường. Scheduler được tạo ngay khi Redis trả lời. Lỗi phía Redis chỉ được ghi log, không làm worker dừng. Lần upsert đầu tiên chạy job ngay lập tức. Khởi động lại thì scheduler vẫn chỉ có một, và lần chạy kế tiếp giữ nguyên lịch cũ (đã kiểm tra bằng `ZCARD bull:order-processing:repeat` = 1).
+- Processor xử lý job này bằng `expirePendingOrders()`: gọi `OrdersService.expireStaleOrders()`, ghi log `Expired N stale PENDING order(s)`, trả `{ expired }` làm `returnvalue`. Không giả lập thời gian chạy hay lỗi.
+- `npm run job:expire-now` (`src/scripts/expire-now.ts`) chạy `expireStaleOrders()` một lần trong một application context của `AppModule`, không cần worker.
 
 - **Mỗi đơn một transaction:** lỗi ở một đơn không rollback các đơn khác, và khóa được giữ trong thời gian ngắn.
 - Vì xử lý bình thường xong trong khoảng 35s, job này thực chất là **lưới an toàn** cho các đơn bị kẹt: worker hoặc Redis ngừng hoạt động lâu, hoặc bước bù trừ ở lần thử cuối bị lỗi.

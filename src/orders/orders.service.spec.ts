@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { DataSource, EntityManager } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
@@ -57,6 +58,7 @@ describe('OrdersService', () => {
     findItemsForRelease: jest.fn(),
     findByIdWithItems: jest.fn(),
     findPage: jest.fn(),
+    findStalePendingIds: jest.fn(),
   };
   const outboxRepo = { add: jest.fn(), findByAggregate: jest.fn() };
   const notificationsRepo = { insertIfAbsent: jest.fn() };
@@ -80,7 +82,14 @@ describe('OrdersService', () => {
         { provide: OutboxRepository, useValue: outboxRepo },
         { provide: NotificationsRepository, useValue: notificationsRepo },
         { provide: OrderQueueProducer, useValue: orderQueue },
-        { provide: ordersConfig.KEY, useValue: { lockTimeoutMs: 5000 } },
+        {
+          provide: ordersConfig.KEY,
+          useValue: {
+            lockTimeoutMs: 5000,
+            pendingTtlMinutes: 30,
+            expireBatchSize: 100,
+          },
+        },
       ],
     }).compile();
     service = moduleRef.get(OrdersService);
@@ -575,6 +584,97 @@ describe('OrdersService', () => {
         failureReason: string;
       };
       expect(patch.failureReason).toHaveLength(MAX_FAILURE_REASON_LENGTH);
+    });
+  });
+
+  describe('expireStaleOrders', () => {
+    const OTHER_ORDER_ID = '88888888-8888-4888-8888-888888888888';
+
+    beforeEach(() => {
+      ordersRepo.findStalePendingIds.mockResolvedValue([
+        ORDER_ID,
+        OTHER_ORDER_ID,
+      ]);
+      ordersRepo.findItemsForRelease.mockResolvedValue([
+        { productId: P1, quantity: 2 },
+      ]);
+    });
+
+    it('UT-10 cancels each stale order in its own transaction, and releases stock only when the CAS matched', async () => {
+      // The second order was confirmed (or cancelled) meanwhile: CAS lost.
+      ordersRepo.transitionStatus
+        .mockResolvedValueOnce({ id: ORDER_ID, status: OrderStatus.CANCELLED })
+        .mockResolvedValueOnce(null);
+
+      const result = await service.expireStaleOrders();
+
+      expect(result).toEqual({ expired: 1 });
+      expect(ordersRepo.findStalePendingIds).toHaveBeenCalledWith(
+        defaultManager,
+        30,
+        100,
+      );
+      expect(dataSource.transaction).toHaveBeenCalledTimes(2);
+      expect(ordersRepo.transitionStatus).toHaveBeenNthCalledWith(
+        1,
+        manager,
+        ORDER_ID,
+        [OrderStatus.PENDING],
+        OrderStatus.CANCELLED,
+        { cancelReason: CancelReason.EXPIRED },
+      );
+      expect(ordersRepo.transitionStatus).toHaveBeenNthCalledWith(
+        2,
+        manager,
+        OTHER_ORDER_ID,
+        [OrderStatus.PENDING],
+        OrderStatus.CANCELLED,
+        { cancelReason: CancelReason.EXPIRED },
+      );
+      expect(ordersRepo.findItemsForRelease).toHaveBeenCalledTimes(1);
+      expect(ordersRepo.findItemsForRelease).toHaveBeenCalledWith(
+        manager,
+        ORDER_ID,
+      );
+      expect(stockRepo.incrementStock).toHaveBeenCalledTimes(1);
+      expect(stockRepo.incrementStock).toHaveBeenCalledWith(manager, P1, 2);
+    });
+
+    it('goes on with the next order when one fails, and counts only the expired ones', async () => {
+      ordersRepo.transitionStatus
+        .mockRejectedValueOnce(
+          new Error('canceling statement due to lock timeout'),
+        )
+        .mockResolvedValueOnce({
+          id: OTHER_ORDER_ID,
+          status: OrderStatus.CANCELLED,
+        });
+      const logError = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation();
+
+      const result = await service.expireStaleOrders();
+
+      expect(result).toEqual({ expired: 1 });
+      expect(dataSource.transaction).toHaveBeenCalledTimes(2);
+      expect(ordersRepo.findItemsForRelease).toHaveBeenCalledWith(
+        manager,
+        OTHER_ORDER_ID,
+      );
+      expect(logError).toHaveBeenCalledWith(
+        expect.stringContaining(`Could not expire order ${ORDER_ID}`),
+        expect.any(String),
+      );
+      logError.mockRestore();
+    });
+
+    it('does nothing when no order is stale', async () => {
+      ordersRepo.findStalePendingIds.mockResolvedValue([]);
+
+      await expect(service.expireStaleOrders()).resolves.toEqual({
+        expired: 0,
+      });
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
   });
 
