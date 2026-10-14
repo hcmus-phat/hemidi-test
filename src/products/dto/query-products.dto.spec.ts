@@ -1,15 +1,8 @@
-import { ValidationPipe } from '@nestjs/common';
 import { AppException } from '../../common/errors/app.exception';
-import { validationExceptionFactory } from '../../common/errors/validation-exception.factory';
+import { createValidationPipe } from '../../common/pipes/validation.pipe';
 import { QueryProductsDto } from './query-products.dto';
 
-// Same options as the global pipe in configure-app.ts.
-const pipe = new ValidationPipe({
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-  exceptionFactory: validationExceptionFactory,
-});
+const pipe = createValidationPipe();
 
 async function parse(query: Record<string, unknown>): Promise<unknown> {
   return pipe

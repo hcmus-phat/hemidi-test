@@ -1,16 +1,9 @@
-import { ValidationPipe } from '@nestjs/common';
 import { AppException } from '../../common/errors/app.exception';
-import { validationExceptionFactory } from '../../common/errors/validation-exception.factory';
+import { createValidationPipe } from '../../common/pipes/validation.pipe';
 import { CreateProductDto } from './create-product.dto';
 import { UpdateProductDto } from './update-product.dto';
 
-// Same options as the global pipe in configure-app.ts.
-const pipe = new ValidationPipe({
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-  exceptionFactory: validationExceptionFactory,
-});
+const pipe = createValidationPipe();
 
 async function validate(
   metatype: typeof CreateProductDto | typeof UpdateProductDto,

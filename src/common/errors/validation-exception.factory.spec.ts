@@ -1,4 +1,4 @@
-import { HttpStatus, ValidationPipe } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -10,12 +10,10 @@ import {
   ValidateNested,
   ValidationError,
 } from 'class-validator';
+import { createValidationPipe } from '../pipes/validation.pipe';
 import { AppException } from './app.exception';
 import { ErrorCode } from './error-codes';
-import {
-  flattenValidationErrors,
-  validationExceptionFactory,
-} from './validation-exception.factory';
+import { flattenValidationErrors } from './validation-exception.factory';
 
 const P1 = '11111111-1111-4111-8111-111111111111';
 
@@ -40,13 +38,7 @@ class OrderDto {
 }
 
 describe('validationExceptionFactory', () => {
-  // Same options as the global pipe in configure-app.ts.
-  const pipe = new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    exceptionFactory: validationExceptionFactory,
-  });
+  const pipe = createValidationPipe();
 
   async function validate(body: unknown): Promise<unknown> {
     return pipe

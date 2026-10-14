@@ -90,6 +90,7 @@ flowchart LR
 │   │   │   ├── error-response.dto.ts      # Định dạng lỗi thống nhất (Swagger và kiểu của filter)
 │   │   │   └── string-transforms.ts       # trim, chữ hoa, chữ thường cho @Transform
 │   │   ├── pipes/
+│   │   │   ├── validation.pipe.ts         # createValidationPipe(): ValidationPipe toàn cục, dùng chung với unit test DTO
 │   │   │   └── uuid-param.pipe.ts         # uuidParam('id'): ParseUUIDPipe trả lỗi VALIDATION_ERROR có details
 │   │   ├── validators/
 │   │   │   └── is-greater-than-or-equal-to.decorator.ts  # So sánh hai field (maxPrice ≥ minPrice, env MAX ≥ MIN)
@@ -190,7 +191,7 @@ flowchart LR
 
 Các thành phần dùng chung (khai báo trong `configure-app.ts` để `main.ts` và `api/index.ts` giống hệt nhau):
 
-- `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, exceptionFactory })`. `exceptionFactory` làm phẳng lỗi lồng nhau thành `details: [{ field: 'items.0.quantity', messages: [...] }]`.
+- `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, exceptionFactory })`. `exceptionFactory` làm phẳng lỗi lồng nhau thành `details: [{ field: 'items.0.quantity', messages: [...] }]`. Pipe được tạo bởi `createValidationPipe()` (`common/pipes/validation.pipe.ts`). Unit test của DTO cũng gọi hàm này, nên luôn test đúng cấu hình production.
 - `AllExceptionsFilter`: chuyển `AppException`, `HttpException`, `QueryFailedError` (theo mã lỗi Postgres) và lỗi không xác định về [định dạng lỗi thống nhất](04-api-spec.md#2-định-dạng-lỗi-thống-nhất).
 - Swagger: `DocumentBuilder` cùng `SwaggerModule.setup('api/docs', …)`. Asset của Swagger UI tải từ CDN để chạy được trên Vercel (xem [08 §4.3](08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)).
 - `app.enableShutdownHooks()` để đóng kết nối DB/Redis và `worker.close()` gọn gàng khi nhận SIGTERM.

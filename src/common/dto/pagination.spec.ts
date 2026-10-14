@@ -1,6 +1,5 @@
-import { ValidationPipe } from '@nestjs/common';
 import { AppException } from '../errors/app.exception';
-import { validationExceptionFactory } from '../errors/validation-exception.factory';
+import { createValidationPipe } from '../pipes/validation.pipe';
 import { paginate } from './paginated-response.dto';
 import {
   getPaginationOffset,
@@ -8,12 +7,7 @@ import {
 } from './pagination-query.dto';
 
 describe('PaginationQueryDto', () => {
-  const pipe = new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    exceptionFactory: validationExceptionFactory,
-  });
+  const pipe = createValidationPipe();
 
   async function parse(query: Record<string, string>): Promise<unknown> {
     return pipe
