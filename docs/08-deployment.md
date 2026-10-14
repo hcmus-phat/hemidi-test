@@ -224,7 +224,7 @@ async function bootstrap(): Promise<void> {
   // abortOnError: false để lỗi khởi động rơi vào catch bên dưới
   const app = await NestFactory.createApplicationContext(WorkerModule, { abortOnError: false });
   app.enableShutdownHooks();   // SIGTERM/SIGINT: dừng relay outbox, worker.close() chờ job đang chạy xong
-  exitIfShutdownHangs();       // quá 10s mà chưa tắt xong (ví dụ Redis đang tắt) thì exit(1)
+  exitIfShutdownHangs('Worker'); // quá 10s mà chưa tắt xong (ví dụ Redis đang tắt) thì exit(1); main.ts cũng gọi hàm này
   Logger.log('Worker started', 'Worker');
 }
 

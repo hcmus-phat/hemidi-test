@@ -61,12 +61,13 @@ flowchart LR
 │   └── index.ts                      # Handler cho Vercel: tạo Nest app một lần rồi cache lại
 ├── src/
 │   ├── main.ts                       # Bootstrap HTTP (local)
-│   ├── worker.ts                     # Bootstrap worker (không HTTP), shutdown hooks, quá 10s thì exit(1)
+│   ├── worker.ts                     # Bootstrap worker (không HTTP), shutdown hooks + exitIfShutdownHangs
 │   ├── app.module.ts                 # Module gốc của API
 │   ├── worker.module.ts              # Module gốc của worker (chứa processor + scheduler)
 │   ├── bootstrap/
 │   │   ├── configure-app.ts          # ValidationPipe, exception filter, Swagger (dùng chung main.ts và api/index.ts)
-│   │   └── swagger.ts                # DocumentBuilder, /api/docs, asset Swagger UI từ CDN
+│   │   ├── swagger.ts                # DocumentBuilder, /api/docs, asset Swagger UI từ CDN
+│   │   └── shutdown-watchdog.ts      # exitIfShutdownHangs(): sau SIGTERM/SIGINT, quá 10s chưa tắt xong thì exit(1) (API và worker)
 │   ├── config/
 │   │   ├── configuration.ts          # Đọc env, trả về object cấu hình có kiểu
 │   │   └── env.validation.ts         # Validate env lúc khởi động (sai thì dừng ngay)

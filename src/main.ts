@@ -3,11 +3,14 @@ import type { ConfigType } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureApp } from './bootstrap/configure-app';
+import { exitIfShutdownHangs } from './bootstrap/shutdown-watchdog';
 import { appConfig } from './config/configuration';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   configureApp(app);
+  // configureApp enabled the shutdown hooks.
+  exitIfShutdownHangs('Bootstrap');
 
   const { port } = app.get<ConfigType<typeof appConfig>>(appConfig.KEY);
   await app.listen(port);
