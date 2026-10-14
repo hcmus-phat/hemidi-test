@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -21,7 +22,9 @@ import { ApiErrorResponse } from '../common/decorators/api-error-response.decora
 import { ErrorCode } from '../common/errors/error-codes';
 import { uuidParam } from '../common/pipes/uuid-param.pipe';
 import { CreateProductDto } from './dto/create-product.dto';
+import { PaginatedProductsDto } from './dto/paginated-products.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
+import { QueryProductsDto } from './dto/query-products.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
@@ -53,6 +56,25 @@ export class ProductsController {
     return ProductResponseDto.fromEntity(
       await this.productsService.create(dto),
     );
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: 'List products',
+    description:
+      'Newest first. `search` matches part of the name (case-insensitive); `minPrice` and `maxPrice` are inclusive. A page beyond the last one returns an empty `data` array.',
+  })
+  @ApiOkResponse({ type: PaginatedProductsDto })
+  @ApiErrorResponse(
+    HttpStatus.BAD_REQUEST,
+    ErrorCode.VALIDATION_ERROR,
+    'Invalid query parameter, or minPrice greater than maxPrice',
+  )
+  async findAll(
+    @Query() query: QueryProductsDto,
+  ): Promise<PaginatedProductsDto> {
+    const { data, meta } = await this.productsService.findAll(query);
+    return { data: data.map((p) => ProductResponseDto.fromEntity(p)), meta };
   }
 
   @Get(':id')

@@ -1,0 +1,81 @@
+import { ValidationPipe } from '@nestjs/common';
+import { AppException } from '../../common/errors/app.exception';
+import { validationExceptionFactory } from '../../common/errors/validation-exception.factory';
+import { QueryProductsDto } from './query-products.dto';
+
+// Same options as the global pipe in configure-app.ts.
+const pipe = new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+  exceptionFactory: validationExceptionFactory,
+});
+
+async function parse(query: Record<string, unknown>): Promise<unknown> {
+  return pipe
+    .transform(query, { type: 'query', metatype: QueryProductsDto })
+    .catch((error: unknown) => error);
+}
+
+describe('QueryProductsDto', () => {
+  it('converts query strings and keeps the pagination defaults', async () => {
+    const query = await parse({
+      search: '  áo  ',
+      minPrice: '100000',
+      maxPrice: '300000',
+    });
+
+    expect(query).toBeInstanceOf(QueryProductsDto);
+    expect(query).toEqual({
+      page: 1,
+      limit: 10,
+      search: 'áo',
+      minPrice: 100000,
+      maxPrice: 300000,
+    });
+  });
+
+  it('leaves every filter optional', async () => {
+    expect(await parse({ page: '2', limit: '5' })).toEqual({
+      page: 2,
+      limit: 5,
+    });
+  });
+
+  it('rejects minPrice > maxPrice with a VALIDATION_ERROR on maxPrice', async () => {
+    const error = await parse({ minPrice: '300000', maxPrice: '100000' });
+
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).details).toEqual([
+      {
+        field: 'maxPrice',
+        messages: ['maxPrice must be greater than or equal to minPrice'],
+      },
+    ]);
+  });
+
+  it.each([
+    [{ minPrice: '100000', maxPrice: '100000' }],
+    [{ minPrice: '100000' }],
+    [{ maxPrice: '0' }],
+  ])('accepts the inclusive range %j', async (input) => {
+    expect(await parse(input)).toBeInstanceOf(QueryProductsDto);
+  });
+
+  it.each([
+    ['minPrice', '-1'],
+    ['minPrice', '1.5'],
+    ['minPrice', 'abc'],
+    ['maxPrice', '9007199254740992'],
+    ['search', 'x'.repeat(101)],
+    ['search', ['a', 'b']],
+    ['sort', 'price'],
+  ])('rejects %s=%j', async (field, value) => {
+    const error = await parse({ [field]: value });
+
+    expect(error).toBeInstanceOf(AppException);
+    expect((error as AppException).details?.map((d) => d.field)).toEqual([
+      field,
+    ]);
+  });
+});

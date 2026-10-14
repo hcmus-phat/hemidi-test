@@ -126,11 +126,11 @@ Lỗi 5xx chỉ trả `message: "Internal server error"`. Stack trace và câu S
 |---|---|---|---|
 | `page` | integer | 1 | `≥ 1` |
 | `limit` | integer | 10 | 1–100 |
-| `search` | string | | Trim, tối đa 100 ký tự. `name ILIKE '%search%'` (escape `%`, `_`, `\`) |
+| `search` | string | | Trim, tối đa 100 ký tự. `name ILIKE '%search%' ESCAPE '\'` (escape `%`, `_`, `\` bằng `\`). Chuỗi rỗng sau khi trim nghĩa là không lọc |
 | `minPrice` | integer | | `≥ 0` (VND) |
-| `maxPrice` | integer | | `≥ 0` (VND). Nếu có cả hai thì `minPrice ≤ maxPrice` |
+| `maxPrice` | integer | | `≥ 0` (VND). Nếu có cả hai thì `minPrice ≤ maxPrice`, sai thì `details: [{ field: 'maxPrice', messages: ['maxPrice must be greater than or equal to minPrice'] }]` |
 
-Query param nhận vào là string, cần `@Type(() => Number)` để chuyển kiểu. Sắp xếp `createdAt DESC, id DESC`.
+Query param nhận vào là string, cần `@Type(() => Number)` để chuyển kiểu. `minPrice`/`maxPrice` tối đa `Number.MAX_SAFE_INTEGER` để luôn nằm trong `bigint`. Query param lạ bị từ chối (`400`, giống field lạ trong body). Sắp xếp `createdAt DESC, id DESC`.
 
 ```http
 GET /products?page=1&limit=2&search=áo&minPrice=100000&maxPrice=300000

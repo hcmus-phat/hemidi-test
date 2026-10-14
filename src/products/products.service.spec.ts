@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { IsNull } from 'typeorm';
+import { QueryProductsDto } from './dto/query-products.dto';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { Product } from './entities/product.entity';
@@ -19,7 +20,16 @@ describe('ProductsService', () => {
     deletedAt: null,
   });
 
+  const queryBuilder = {
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn(),
+  };
   const repository = {
+    createQueryBuilder: jest.fn(() => queryBuilder),
     create: jest.fn(),
     save: jest.fn(),
     findOneBy: jest.fn(),
@@ -73,6 +83,70 @@ describe('ProductsService', () => {
       await expect(
         service.create({ sku: 'A', name: 'A', price: 1, stock: 1 }),
       ).rejects.toBe(dbError);
+    });
+  });
+
+  describe('findAll', () => {
+    const query = (values: Partial<QueryProductsDto>): QueryProductsDto =>
+      Object.assign(new QueryProductsDto(), values);
+
+    it('orders newest first with a stable tie-breaker and paginates', async () => {
+      queryBuilder.getManyAndCount.mockResolvedValue([[product], 21]);
+
+      const result = await service.findAll(query({ page: 3, limit: 10 }));
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'product.createdAt',
+        'DESC',
+      );
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'product.id',
+        'DESC',
+      );
+      expect(queryBuilder.skip).toHaveBeenCalledWith(20);
+      expect(queryBuilder.take).toHaveBeenCalledWith(10);
+      expect(queryBuilder.andWhere).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        data: [product],
+        meta: { page: 3, limit: 10, total: 21, totalPages: 3 },
+      });
+    });
+
+    it('searches the name case-insensitively with LIKE wildcards escaped', async () => {
+      queryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll(query({ search: '50%_off' }));
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        "product.name ILIKE :pattern ESCAPE '\\'",
+        { pattern: '%50\\%\\_off%' },
+      );
+    });
+
+    it('filters on an inclusive price range, including a bound of 0', async () => {
+      queryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll(query({ minPrice: 0, maxPrice: 300000 }));
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'product.price >= :minPrice',
+        { minPrice: 0 },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'product.price <= :maxPrice',
+        { maxPrice: 300000 },
+      );
+    });
+
+    it('returns an empty page beyond the last one', async () => {
+      queryBuilder.getManyAndCount.mockResolvedValue([[], 3]);
+
+      const result = await service.findAll(query({ page: 5, limit: 10 }));
+
+      expect(result).toEqual({
+        data: [],
+        meta: { page: 5, limit: 10, total: 3, totalPages: 1 },
+      });
     });
   });
 

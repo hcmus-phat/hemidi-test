@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
+import { paginate, Paginated } from '../common/dto/paginated-response.dto';
+import { getPaginationOffset } from '../common/dto/pagination-query.dto';
 import { AppException } from '../common/errors/app.exception';
+import {
+  escapeLikePattern,
+  LIKE_ESCAPE_CHAR,
+} from '../common/utils/escape-like';
 import { CreateProductDto } from './dto/create-product.dto';
+import { QueryProductsDto } from './dto/query-products.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
 
@@ -21,6 +28,35 @@ export class ProductsService {
    */
   create(dto: CreateProductDto): Promise<Product> {
     return this.products.save(this.products.create(dto));
+  }
+
+  /**
+   * Newest first, with id as a tie-breaker so pages are stable. Soft-deleted
+   * rows are excluded automatically because the entity has @DeleteDateColumn.
+   * A page beyond the last one simply returns no rows.
+   */
+  async findAll(query: QueryProductsDto): Promise<Paginated<Product>> {
+    const qb = this.products
+      .createQueryBuilder('product')
+      .orderBy('product.createdAt', 'DESC')
+      .addOrderBy('product.id', 'DESC')
+      .skip(getPaginationOffset(query))
+      .take(query.limit);
+
+    if (query.search) {
+      qb.andWhere(`product.name ILIKE :pattern ESCAPE '${LIKE_ESCAPE_CHAR}'`, {
+        pattern: `%${escapeLikePattern(query.search)}%`,
+      });
+    }
+    if (query.minPrice !== undefined) {
+      qb.andWhere('product.price >= :minPrice', { minPrice: query.minPrice });
+    }
+    if (query.maxPrice !== undefined) {
+      qb.andWhere('product.price <= :maxPrice', { maxPrice: query.maxPrice });
+    }
+
+    const [data, total] = await qb.getManyAndCount();
+    return paginate(data, total, query);
   }
 
   /** Soft-deleted products are excluded automatically (@DeleteDateColumn). */
