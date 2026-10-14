@@ -50,7 +50,7 @@ Nếu ghi bằng `stock = stock - 1` thay vì giá trị tính sẵn, B sẽ đ�
 
 ```sql
 BEGIN;
-SET LOCAL lock_timeout = '5s';
+SELECT set_config('lock_timeout', '5000ms', true);  -- = SET LOCAL lock_timeout, nhưng nhận được tham số (§8)
 
 SELECT id, sku, name, price, stock
   FROM products
@@ -60,9 +60,10 @@ SELECT id, sku, name, price, stock
    FOR UPDATE;
 -- app: kiểm tra tồn tại và tồn kho. Có lỗi thì ROLLBACK và trả 404/409
 
+-- theo thứ tự id mà câu khóa trả về; TypeORM sinh stock = stock + $delta với $delta = -q
 UPDATE products SET stock = stock - $q1, updated_at = now() WHERE id = $1;
 UPDATE products SET stock = stock - $q2, updated_at = now() WHERE id = $2;
-INSERT INTO orders (...) VALUES (...) RETURNING id;
+INSERT INTO orders (...) VALUES (...) RETURNING id, status, created_at, updated_at;
 INSERT INTO order_items (...) VALUES (...), (...);
 INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload) VALUES ('ORDER', $orderId, 'ORDER_CREATED', $payload);
 COMMIT;
@@ -72,30 +73,41 @@ COMMIT;
 ### 4.2 TypeORM
 
 ```ts
-// products/product-stock.repository.ts
+// products/product-stock.repository.ts (rút gọn)
 @Injectable()
 export class ProductStockRepository {
   /** Khóa các sản phẩm còn hoạt động theo thứ tự id tăng dần (SELECT … FOR UPDATE). */
-  findActiveForUpdate(manager: EntityManager, ids: string[]): Promise<Product[]> {
+  findActiveForUpdate(manager: EntityManager, productIds: string[]): Promise<Product[]> {
     return manager
-      .getRepository(Product)
-      .createQueryBuilder('p')
+      .createQueryBuilder(Product, 'product')
+      .where('product.id IN (:...productIds)', { productIds })
+      .orderBy('product.id', 'ASC')          // thứ tự khóa cố định, chống deadlock
       .setLock('pessimistic_write')          // Postgres: FOR UPDATE
-      .where('p.id IN (:...ids)', { ids })
-      .orderBy('p.id', 'ASC')                // thứ tự khóa cố định, chống deadlock
-      .getMany();                            // TypeORM tự thêm "p.deleted_at IS NULL"
+      .getMany();                            // TypeORM tự thêm "product.deleted_at IS NULL"
   }
 
   decrementStock(manager: EntityManager, productId: string, quantity: number) {
-    return manager.decrement(Product, { id: productId }, 'stock', quantity); // stock = stock - quantity
+    return this.addToStock(manager, productId, -quantity);   // stock = stock - quantity
   }
 
   /** Hoàn kho, không lọc deleted_at (A-07). */
   incrementStock(manager: EntityManager, productId: string, quantity: number) {
-    return manager.increment(Product, { id: productId }, 'stock', quantity);
+    return this.addToStock(manager, productId, quantity);
+  }
+
+  private async addToStock(manager: EntityManager, productId: string, delta: number) {
+    await manager
+      .createQueryBuilder()
+      .update(Product)
+      .set({ stock: () => 'stock + :delta' }) // TypeORM tự thêm updated_at = CURRENT_TIMESTAMP
+      .where('id = :productId')
+      .setParameters({ productId, delta })
+      .execute();
   }
 }
 ```
+
+Với TypeORM 1.1 (đã kiểm tra bằng log SQL): câu khóa là **một** câu `SELECT … WHERE (id IN ($1, $2)) AND (deleted_at IS NULL) ORDER BY id ASC FOR UPDATE` (không có join hay `LIMIT` nên không bị tách thành hai câu), và `UPDATE` không tự thêm điều kiện `deleted_at`. Không dùng `manager.decrement()`/`increment()`, vì hai hàm này ghép thẳng giá trị vào chuỗi SQL thay vì truyền tham số.
 
 > Không `JOIN` trong câu khóa: Postgres không cho `FOR UPDATE` trên phía nullable của `LEFT JOIN`, và join sẽ khóa thừa các dòng khác.
 
@@ -165,7 +177,7 @@ Nếu vẫn gặp `40P01` (không mong đợi), filter ánh xạ sang `503 SERVI
 ## 8. Vận hành và giới hạn
 
 - **Transaction ngắn:** không có I/O mạng nào khác trong transaction (job được relay outbox đẩy sau, ở worker), nên khóa chỉ giữ vài ms.
-- **`lock_timeout`:** `SET LOCAL lock_timeout = '5s'` (`DB_LOCK_TIMEOUT_MS`). Quá thời gian thì lỗi `55P03`, ánh xạ sang `503`, thay vì treo request vô thời hạn.
+- **`lock_timeout`:** tương đương `SET LOCAL lock_timeout = '5s'` (`DB_LOCK_TIMEOUT_MS`). Quá thời gian thì lỗi `55P03`, ánh xạ sang `503`, thay vì treo request vô thời hạn. Lệnh `SET` không nhận tham số (`$1`), nên code chạy `SELECT set_config('lock_timeout', $1, true)`: tham số thứ ba `true` nghĩa là chỉ áp dụng cho transaction hiện tại, giống `SET LOCAL`.
 - **Connection pool:** mỗi transaction đang chờ khóa giữ một connection. Với một sản phẩm cực "hot", request sẽ xếp hàng ở pool. Ở quy mô bài này điều đó chấp nhận được. Trên Vercel nên dùng pooled connection của Neon và `DATABASE_POOL_MAX` nhỏ.
 - **Nhiều instance:** khóa nằm trong DB nên vẫn đúng với bất kỳ số instance API hay worker nào.
 

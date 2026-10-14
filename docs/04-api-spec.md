@@ -234,6 +234,8 @@ Body `UpdateProductDto = PartialType(CreateProductDto)`: mọi field đều tùy
 
 `status ∈ { PENDING, CONFIRMED, FAILED, CANCELLED }`, `cancelReason ∈ { CUSTOMER_REQUEST, EXPIRED, null }`.
 
+`items` luôn được sắp xếp theo `productId` tăng dần, giống nhau ở `POST /orders`, `GET /orders/:id` và `PATCH /orders/:id/cancel`. Đây cũng là thứ tự khóa sản phẩm và hoàn kho ([06 §5](06-concurrency.md#5-chống-deadlock)), nên không phụ thuộc thứ tự client gửi.
+
 ### 4.2 `POST /orders`
 
 **Body (`CreateOrderDto`)**
@@ -241,9 +243,9 @@ Body `UpdateProductDto = PartialType(CreateProductDto)`: mọi field đều tùy
 | Field | Kiểu | Bắt buộc | Quy tắc |
 |---|---|---|---|
 | `customerName` | string | ✓ | Trim, dài 1–255 |
-| `customerEmail` | string | ✓ | `@IsEmail()`, tối đa 255 ký tự, chuyển về chữ thường |
-| `items` | array | ✓ | 1–50 phần tử, `@ValidateNested({ each: true })`, `@Type(() => OrderItemDto)`, `@ArrayUnique(i => i.productId)` |
-| `items[].productId` | string | ✓ | `@IsUUID()`, chuyển về chữ thường (`@Transform`) trước khi kiểm tra trùng và tra cứu |
+| `customerEmail` | string | ✓ | Trim và chuyển về chữ thường trước khi kiểm tra. `@IsEmail()`, tối đa 255 ký tự |
+| `items` | array | ✓ | 1–50 phần tử, `@ValidateNested({ each: true })`, `@Type(() => OrderItemDto)`, `@ArrayUnique(i => i.productId)`. `productId` lặp lại (kể cả khác hoa thường) trả lỗi trên field `items`: `items must not contain the same productId more than once` |
+| `items[].productId` | string | ✓ | `@IsUUID('4')` (giống `:id` trên URL), trim và chuyển về chữ thường (`@Transform`) trước khi kiểm tra trùng và tra cứu |
 | `items[].quantity` | integer | ✓ | `@IsInt()`, 1–1000 |
 
 ```json

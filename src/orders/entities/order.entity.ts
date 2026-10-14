@@ -79,7 +79,10 @@ export class Order {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 
-  /** Loaded only when asked for (order detail). */
+  /**
+   * Only set by the queries that load items (order detail and a new order);
+   * undefined on list results.
+   */
   @OneToMany(() => OrderItem, (item) => item.order)
-  items?: OrderItem[];
+  items: OrderItem[];
 }

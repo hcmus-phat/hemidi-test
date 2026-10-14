@@ -180,7 +180,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 ### ADR-014: Mức cô lập và thời gian chờ khóa
 
-- **Quyết định:** Dùng `READ COMMITTED` (mặc định của Postgres). Đặt `SET LOCAL lock_timeout = DB_LOCK_TIMEOUT_MS` (5000) trong transaction tạo và hủy đơn. Quá thời gian thì lỗi `55P03`, trả `503 SERVICE_UNAVAILABLE`.
+- **Quyết định:** Dùng `READ COMMITTED` (mặc định của Postgres). Đặt `SET LOCAL lock_timeout = DB_LOCK_TIMEOUT_MS` (5000) trong transaction tạo và hủy đơn. Code dùng dạng có tham số `SELECT set_config('lock_timeout', $1, true)`, vì `SET` không nhận tham số ([06 §8](06-concurrency.md#8-vận-hành-và-giới-hạn)). Quá thời gian thì lỗi `55P03`, trả `503 SERVICE_UNAVAILABLE`.
 - **Lý do:** Sau khi chờ khóa, Postgres đọc lại phiên bản mới nhất nên không cần `SERIALIZABLE`. Timeout tránh treo request vô hạn.
 
 ### ADR-015: Chuyển trạng thái bằng CAS
@@ -286,6 +286,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-014: ghi nhận cách đặt `lock_timeout` trong code: `SELECT set_config('lock_timeout', $1, true)`, dạng có tham số của `SET LOCAL` |
 | 2026-10-14 | ADR-029: ghi nhận Nest CLI (dev-only) cần Node ≥ 22.22.3, nên `npm ci` cảnh báo `EBADENGINE` trên 22.13–22.22. `engines.node` giữ `>=22.13` cho runtime |
 | 2026-10-14 | ADR-011: làm rõ hệ quả. Chỉ lỗi 500 ẩn `message`. Lỗi 503 trả thông điệp ngắn, cố định để client biết nên thử lại |
 | 2026-10-14 | ADR-029: ghi nhận NestJS 12 chỉ phát hành ES module. Dự án giữ CommonJS (Node ≥ 22.13), Jest dùng transformer chuyển `@nestjs/*` sang CommonJS, TypeScript 6.0 |

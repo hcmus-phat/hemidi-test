@@ -39,15 +39,17 @@ stateDiagram-v2
 
 ### 2.1 Thao tác CAS dùng chung
 
-`OrdersRepository.transitionStatus(manager, orderId, from[], to, patch)`:
+`OrdersRepository.transitionStatus(manager, orderId, from[], to, patch)`, trong đó `patch` chỉ chứa lý do (`cancelReason` hoặc `failureReason`):
 
 ```sql
 UPDATE orders
-   SET status = $to, updated_at = now() /* , confirmed_at | failed_at | cancelled_at, reason… */
+   SET status = $to, updated_at = now(), <to>_at = now() /* confirmed_at | failed_at | cancelled_at */, cancel_reason | failure_reason = $reason
  WHERE id = $orderId
    AND status = ANY($from)
 RETURNING id, status, customer_email, total_amount;
 ```
+
+- Cột thời điểm của trạng thái đích (`confirmed_at`, `failed_at`, `cancelled_at`) do repository tự đặt bằng `now()` của Postgres, cùng đồng hồ với `created_at`/`updated_at`. Nơi gọi không truyền `new Date()`, vì đồng hồ của máy chạy Node có thể lệch với đồng hồ DB (ví dụ máy ảo Docker).
 
 - Trả về dòng đơn nếu cập nhật được, `null` nếu không có dòng nào khớp (đơn không tồn tại, hoặc đã ở trạng thái khác).
 - `UPDATE` lấy khóa dòng trên `orders`. Hai transaction cùng CAS một đơn sẽ chạy tuần tự. Bên đến sau, sau khi chờ khóa, sẽ **đánh giá lại `WHERE` trên phiên bản dòng mới nhất**, thấy trạng thái đã đổi và không cập nhật gì.
@@ -76,7 +78,7 @@ sequenceDiagram
   participant DB as PostgreSQL
 
   C->>API: POST /orders
-  API->>DB: BEGIN, SET LOCAL lock_timeout
+  API->>DB: BEGIN, set_config('lock_timeout', …, true)
   API->>DB: SELECT ... FROM products WHERE id IN (...) AND deleted_at IS NULL ORDER BY id FOR UPDATE
   alt thiếu sản phẩm hoặc thiếu hàng
     API->>DB: ROLLBACK
@@ -138,6 +140,8 @@ async create(dto: CreateOrderDto): Promise<OrderDetailDto> {
   return toOrderDetail(order); // không có I/O Redis trên đường đi này
 }
 ```
+
+> Code thật (`src/orders/orders.service.ts`) khác mẫu trên ở vài điểm nhỏ: các dòng của đơn được dựng theo thứ tự sản phẩm mà câu khóa trả về (`id` tăng dần), nên việc trừ kho, `order_items` và `items` trong response đều theo thứ tự `productId`. Tổng tiền tính bằng `calculateOrderTotal` (kiểm tra safe integer, [03 §5](03-database.md#5-xử-lý-tiền-tệ)). `setLockTimeout` chạy `SELECT set_config('lock_timeout', $1, true)` ([06 §8](06-concurrency.md#8-vận-hành-và-giới-hạn)). Service trả entity `Order`, controller chuyển sang `OrderDetailDto`.
 
 ### 3.2 Relay (Worker)
 
@@ -355,7 +359,7 @@ export class OrderProcessingProcessor extends WorkerHost {
 ```ts
 async confirmOrder(orderId: string): Promise<boolean> {
   return this.dataSource.transaction(async (manager) => {
-    const order = await this.ordersRepo.transitionStatus(manager, orderId, [OrderStatus.PENDING], OrderStatus.CONFIRMED, { confirmedAt: new Date() });
+    const order = await this.ordersRepo.transitionStatus(manager, orderId, [OrderStatus.PENDING], OrderStatus.CONFIRMED);
     if (!order) return false; // CAS thua: đơn đã bị hủy, hết hạn, hoặc đã được xác nhận
     await this.notificationsRepo.insertIfAbsent(manager, {
       orderId, type: NotificationType.ORDER_CONFIRMED, recipient: order.customerEmail,
@@ -367,7 +371,7 @@ async confirmOrder(orderId: string): Promise<boolean> {
 
 async failOrder(orderId: string, reason: string): Promise<boolean> {
   return this.dataSource.transaction(async (manager) => {
-    const order = await this.ordersRepo.transitionStatus(manager, orderId, [OrderStatus.PENDING], OrderStatus.FAILED, { failureReason: reason, failedAt: new Date() });
+    const order = await this.ordersRepo.transitionStatus(manager, orderId, [OrderStatus.PENDING], OrderStatus.FAILED, { failureReason: reason });
     if (!order) return false;
     await this.releaseStock(manager, orderId);
     return true;
@@ -419,7 +423,7 @@ async cancel(orderId: string): Promise<OrderDetailDto> {
     const order = await this.ordersRepo.transitionStatus(
       manager, orderId,
       [OrderStatus.PENDING, OrderStatus.CONFIRMED], OrderStatus.CANCELLED,
-      { cancelReason: CancelReason.CUSTOMER_REQUEST, cancelledAt: new Date() },
+      { cancelReason: CancelReason.CUSTOMER_REQUEST },
     );
     if (!order) {
       const current = await this.ordersRepo.findStatus(manager, orderId);
@@ -483,7 +487,7 @@ async expireStaleOrders(): Promise<{ expired: number }> {
     const ok = await this.dataSource.transaction(async (manager) => {
       const order = await this.ordersRepo.transitionStatus(
         manager, id, [OrderStatus.PENDING], OrderStatus.CANCELLED,
-        { cancelReason: CancelReason.EXPIRED, cancelledAt: new Date() },
+        { cancelReason: CancelReason.EXPIRED },
       );
       if (!order) return false;           // job vừa xác nhận hoặc khách vừa hủy
       await this.releaseStock(manager, id);

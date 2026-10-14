@@ -1,6 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import type { OpenAPIObject } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
+import { OrdersController } from '../orders/orders.controller';
+import { OrdersService } from '../orders/orders.service';
 import { ProductsController } from '../products/products.controller';
 import { ProductsService } from '../products/products.service';
 import { createSwaggerDocument } from './swagger';
@@ -15,8 +17,11 @@ describe('createSwaggerDocument', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      controllers: [ProductsController],
-      providers: [{ provide: ProductsService, useValue: {} }],
+      controllers: [ProductsController, OrdersController],
+      providers: [
+        { provide: ProductsService, useValue: {} },
+        { provide: OrdersService, useValue: {} },
+      ],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -39,6 +44,12 @@ describe('createSwaggerDocument', () => {
     return parameters.find((p) => p.name === name)?.schema ?? {};
   }
 
+  it('lists every order endpoint', () => {
+    expect(Object.keys(document.paths['/orders'])).toEqual(
+      expect.arrayContaining(['post']),
+    );
+  });
+
   it('lists every product endpoint', () => {
     expect(Object.keys(document.paths['/products'])).toEqual(
       expect.arrayContaining(['get', 'post']),
@@ -56,6 +67,11 @@ describe('createSwaggerDocument', () => {
     ['UpdateProductDto', 'price'],
     ['ProductResponseDto', 'price'],
     ['ProductResponseDto', 'stock'],
+    ['OrderItemDto', 'quantity'],
+    ['OrderItemResponseDto', 'unitPrice'],
+    ['OrderItemResponseDto', 'quantity'],
+    ['OrderItemResponseDto', 'lineTotal'],
+    ['OrderDetailDto', 'totalAmount'],
     ['PaginationMetaDto', 'page'],
     ['PaginationMetaDto', 'totalPages'],
     ['ErrorResponseDto', 'statusCode'],
