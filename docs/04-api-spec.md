@@ -400,6 +400,6 @@ Trả `503` cùng `status: "error"` nếu một trong hai bị down.
 
 - `@ApiTags('products' | 'orders' | 'health')`, `@ApiOperation({ summary })` cho mọi endpoint.
 - Mọi DTO có `@ApiProperty` hoặc `@ApiPropertyOptional` kèm `example`, `minimum`, `maximum`, `enum`.
-- Khai báo response lỗi bằng `@ApiResponse({ status, type: ErrorResponseDto })` cho các mã ở bảng trên. Có thể gom vào decorator tùy biến `@ApiErrorResponses(400, 404, 409)` để tránh lặp.
+- Khai báo response lỗi bằng `@ApiResponse({ status, type: ErrorResponseDto })` cho các mã ở bảng trên, qua decorator `@ApiErrorResponse(HttpStatus.NOT_FOUND, ErrorCode.PRODUCT_NOT_FOUND, 'Product does not exist or was deleted')` (`src/common/decorators/api-error-response.decorator.ts`). Mỗi decorator ứng với một status và ghi rõ mã lỗi trong mô tả.
 - Response phân trang có schema rõ ràng (`PaginatedProductsDto`, `PaginatedOrdersDto`).
 - Truy cập được tại `/api/docs` trên bản deploy. Asset UI tải từ CDN ([08 §4.3](08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)).

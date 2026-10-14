@@ -8,19 +8,10 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { QueryFailedError } from 'typeorm';
+import { ErrorResponseDto } from '../dto/error-response.dto';
 import { AppException, ErrorDetail } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
 import { DbConstraint, PgErrorCode } from '../errors/pg-error-codes';
-
-/** The unified error body (docs/04 §2). */
-export interface ErrorResponseBody {
-  statusCode: number;
-  error: string;
-  message: string;
-  details?: ErrorDetail[];
-  path: string;
-  timestamp: string;
-}
 
 interface ApiError {
   status: number;
@@ -88,7 +79,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       );
     }
 
-    const body: ErrorResponseBody = {
+    const body: ErrorResponseDto = {
       statusCode: error.status,
       error: error.code,
       message: error.message,

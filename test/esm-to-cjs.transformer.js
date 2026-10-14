@@ -8,17 +8,26 @@
  * those packages (see `transformIgnorePatterns` in jest.config.js) with this file.
  *
  * It is only used by tests. Production code never goes through it.
+ * Jest caches transformed files: run `npx jest --clearCache` after editing this file.
  */
 const ts = require('typescript');
 
+// ES modules rebuild CommonJS variables themselves, e.g.
+// `const require = createRequire(import.meta.url)`. In CommonJS these names are
+// already parameters of the module wrapper, so redeclaring them is a syntax
+// error: the declarations are dropped and the built-in values are used.
+const COMMONJS_VARIABLE_DECLARATION =
+  /^[ \t]*(?:const|let|var)[ \t]+(?:require|__filename|__dirname)[ \t]*=.*$/gm;
+
 module.exports = {
   process(sourceText, sourcePath) {
-    // `import.meta` does not exist in CommonJS. Packages only use it to build a
-    // `require` function (`createRequire(import.meta.url)`), so the file URL is enough.
-    const code = sourceText.replace(
-      /\bimport\.meta\.url\b/g,
-      "require('node:url').pathToFileURL(__filename).href",
-    );
+    const code = sourceText
+      .replace(COMMONJS_VARIABLE_DECLARATION, '')
+      // `import.meta` does not exist in CommonJS; build the same file URL.
+      .replace(
+        /\bimport\.meta\.url\b/g,
+        "require('node:url').pathToFileURL(__filename).href",
+      );
 
     const { outputText } = ts.transpileModule(code, {
       fileName: sourcePath,

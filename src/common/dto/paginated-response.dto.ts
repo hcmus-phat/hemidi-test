@@ -1,13 +1,27 @@
+import { ApiProperty } from '@nestjs/swagger';
 import type { PaginationQueryDto } from './pagination-query.dto';
 
 export class PaginationMetaDto {
+  @ApiProperty({ example: 1 })
   page: number;
+
+  @ApiProperty({ example: 10 })
   limit: number;
+
+  @ApiProperty({
+    description: 'Number of items matching the query',
+    example: 7,
+  })
   total: number;
+
+  @ApiProperty({ example: 1 })
   totalPages: number;
 }
 
-/** Shape of every list response: `{ data: [...], meta: { page, limit, total, totalPages } }`. */
+/**
+ * Shape of every list response: `{ data: [...], meta: { page, limit, total, totalPages } }`.
+ * Swagger schemas use a concrete subclass per resource (e.g. PaginatedProductsDto).
+ */
 export interface Paginated<T> {
   data: T[];
   meta: PaginationMetaDto;

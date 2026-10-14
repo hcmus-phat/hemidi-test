@@ -9,19 +9,17 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
+import { ErrorResponseDto } from '../dto/error-response.dto';
 import { AppException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-codes';
-import {
-  AllExceptionsFilter,
-  ErrorResponseBody,
-} from './all-exceptions.filter';
+import { AllExceptionsFilter } from './all-exceptions.filter';
 
 const PATH = '/products?page=1';
 const P1 = '11111111-1111-4111-8111-111111111111';
 
 function catchWithFilter(exception: unknown): {
   status: number;
-  body: ErrorResponseBody;
+  body: ErrorResponseDto;
 } {
   const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
   const request = { method: 'POST', url: PATH, originalUrl: PATH };
@@ -38,7 +36,7 @@ function catchWithFilter(exception: unknown): {
   expect(response.json).toHaveBeenCalledTimes(1);
   return {
     status: response.status.mock.calls[0][0] as number,
-    body: response.json.mock.calls[0][0] as ErrorResponseBody,
+    body: response.json.mock.calls[0][0] as ErrorResponseDto,
   };
 }
 
