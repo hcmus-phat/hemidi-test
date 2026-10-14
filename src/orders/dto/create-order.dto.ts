@@ -7,6 +7,7 @@ import {
   IsArray,
   IsEmail,
   IsInt,
+  isObject,
   IsObject,
   IsString,
   IsUUID,
@@ -61,6 +62,15 @@ const productIdKey = (item: Partial<OrderItemDto>): unknown =>
  */
 const isArray = (_dto: object, items: unknown): boolean => Array.isArray(items);
 
+/**
+ * `validateIf` for the duplicate check. arrayUnique() returns false for a
+ * non-array and compares null items without calling productIdKey, so it
+ * would report a duplicate productId that does not exist. It runs once every
+ * item is an object; until then @IsArray and @IsObject say what is wrong.
+ */
+const isArrayOfObjects = (_dto: object, items: unknown): boolean =>
+  Array.isArray(items) && items.every((item) => isObject(item));
+
 export class CreateOrderDto {
   @ApiProperty({
     description: 'Customer name (trimmed)',
@@ -97,6 +107,7 @@ export class CreateOrderDto {
   // Runs on the transformed items, so ids that differ only in case are duplicates.
   @ArrayUnique(productIdKey, {
     message: 'items must not contain the same productId more than once',
+    validateIf: isArrayOfObjects,
   })
   // @ValidateNested accepts an array as an item and only validates what is
   // inside it, so without this rule `items: [[]]` would pass and reach the

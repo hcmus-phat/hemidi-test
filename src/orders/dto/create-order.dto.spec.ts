@@ -92,6 +92,33 @@ describe('CreateOrderDto', () => {
         'items.1.productId',
       ]);
     });
+
+    it('reports a duplicate next to an item without a productId', async () => {
+      const result = await validate({
+        ...valid,
+        items: [
+          { productId: P1, quantity: 1 },
+          { productId: P1, quantity: 2 },
+          { quantity: 3 },
+        ],
+      });
+
+      expect(invalidFields(result)).toEqual(['items', 'items.2.productId']);
+      expect(messagesOf(result, 'items')).toEqual([message]);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['null', null],
+      ['a string', 'abc'],
+      ['a list of nulls', [null, null]],
+      ['a list of empty arrays', [[], []]],
+    ])('does not report a duplicate when items is %s', async (_case, items) => {
+      const result = await validate({ ...valid, items });
+
+      expect(invalidFields(result)).toContain('items');
+      expect(messagesOf(result, 'items')).not.toContain(message);
+    });
   });
 
   describe('items', () => {
