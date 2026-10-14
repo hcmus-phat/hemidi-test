@@ -111,7 +111,7 @@ flowchart LR
 │   │   ├── orders.service.ts              # Nghiệp vụ: create, cancel, confirm, fail, expire
 │   │   ├── orders.service.spec.ts         # Unit test bắt buộc
 │   │   ├── orders.repository.ts           # Insert đơn + items, CAS trạng thái, truy vấn
-│   │   ├── order-status.enum.ts
+│   │   ├── order-status.enum.ts           # enum OrderStatus và CancelReason
 │   │   ├── entities/order.entity.ts, order-item.entity.ts
 │   │   └── dto/ (create, query, response, order-jobs-response)
 │   ├── notifications/
