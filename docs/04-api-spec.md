@@ -10,7 +10,7 @@
 | ID | UUID v4. Sai định dạng thì trả `400 VALIDATION_ERROR` (dùng `ParseUUIDPipe`) |
 | Thời gian | ISO 8601, UTC, ví dụ `2026-10-14T03:15:00.000Z` |
 | Tiền | Số nguyên (`integer`), đơn vị VND ([ADR-007](10-technical-decisions.md#adr-007-kiểu-dữ-liệu-tiền)) |
-| Phân trang | Query `page` (≥ 1, mặc định 1) và `limit` (1–100, mặc định 10) |
+| Phân trang | Query `page` (1–1 000 000, mặc định 1) và `limit` (1–100, mặc định 10). Cận trên của `page` chỉ để `OFFSET` luôn hợp lệ, trang vượt quá số trang vẫn trả `data: []` |
 | Response danh sách | `{ "data": [...], "meta": { "page", "limit", "total", "totalPages" } }` |
 | Response đơn lẻ | Trả thẳng object, không bọc thêm |
 | Thông điệp lỗi | Tiếng Anh, ngắn gọn, nêu rõ nguyên nhân. `error` là mã máy đọc được ([ADR-011](10-technical-decisions.md#adr-011-định-dạng-lỗi-và-ngôn-ngữ-thông-báo)) |
