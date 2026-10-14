@@ -152,7 +152,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
           : this.conflict();
       case PgErrorCode.FOREIGN_KEY_VIOLATION:
         return this.conflict();
+      // A value Postgres cannot read (22P02, e.g. a malformed uuid) or store
+      // (22021, e.g. a NUL character, which text columns do not accept).
       case PgErrorCode.INVALID_TEXT_REPRESENTATION:
+      case PgErrorCode.CHARACTER_NOT_IN_REPERTOIRE:
         return new AppException(
           ErrorCode.VALIDATION_ERROR,
           'Invalid input value',

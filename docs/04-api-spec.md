@@ -380,7 +380,7 @@ Trả `503` cùng `status: "error"` nếu một trong hai bị down.
 
 | HTTP | `error` | Khi nào | Nguồn |
 |---|---|---|---|
-| 400 | `VALIDATION_ERROR` | DTO/query sai, UUID sai, `minPrice > maxPrice`, `productId` lặp, body không phải JSON hợp lệ | `ValidationPipe`, `ParseUUIDPipe`, body-parser, Postgres `22P02` |
+| 400 | `VALIDATION_ERROR` | DTO/query sai, UUID sai, `minPrice > maxPrice`, `productId` lặp, body không phải JSON hợp lệ | `ValidationPipe`, `ParseUUIDPipe`, body-parser, Postgres `22P02` (giá trị không đọc được), `22021` (ký tự Postgres không lưu được, ví dụ `\u0000` trong chuỗi) |
 | 404 | `NOT_FOUND` | Route không tồn tại | `NotFoundException` của Nest |
 | 404 | `PRODUCT_NOT_FOUND` | Sản phẩm không tồn tại hoặc đã xóa mềm | Service |
 | 404 | `ORDER_NOT_FOUND` | Đơn không tồn tại | Service |
