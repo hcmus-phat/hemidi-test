@@ -65,7 +65,8 @@ flowchart LR
 │   ├── app.module.ts                 # Module gốc của API
 │   ├── worker.module.ts              # Module gốc của worker (chứa processor + scheduler)
 │   ├── bootstrap/
-│   │   └── configure-app.ts          # ValidationPipe, exception filter, Swagger (dùng chung main.ts và api/index.ts)
+│   │   ├── configure-app.ts          # ValidationPipe, exception filter, Swagger (dùng chung main.ts và api/index.ts)
+│   │   └── swagger.ts                # DocumentBuilder, /api/docs, asset Swagger UI từ CDN
 │   ├── config/
 │   │   ├── configuration.ts          # Đọc env, trả về object cấu hình có kiểu
 │   │   └── env.validation.ts         # Validate env lúc khởi động (sai thì dừng ngay)
@@ -76,13 +77,22 @@ flowchart LR
 │   ├── common/
 │   │   ├── errors/
 │   │   │   ├── error-codes.ts        # enum ErrorCode
-│   │   │   └── app.exception.ts      # AppException(code, message, details, httpStatus)
+│   │   │   ├── app.exception.ts      # AppException(code, message, details, httpStatus) và các factory
+│   │   │   ├── pg-error-codes.ts     # Mã SQLSTATE và tên constraint mà filter nhận biết
+│   │   │   └── validation-exception.factory.ts  # exceptionFactory của ValidationPipe (làm phẳng lỗi lồng nhau)
 │   │   ├── filters/
 │   │   │   └── all-exceptions.filter.ts   # Gom mọi lỗi về một định dạng
+│   │   ├── decorators/
+│   │   │   └── api-error-response.decorator.ts  # @ApiErrorResponse(status, code, mô tả) cho Swagger
 │   │   ├── dto/
 │   │   │   ├── pagination-query.dto.ts
 │   │   │   ├── paginated-response.dto.ts
-│   │   │   └── error-response.dto.ts      # Dùng cho Swagger
+│   │   │   ├── error-response.dto.ts      # Định dạng lỗi thống nhất (Swagger và kiểu của filter)
+│   │   │   └── string-transforms.ts       # trim, chữ hoa, chữ thường cho @Transform
+│   │   ├── pipes/
+│   │   │   └── uuid-param.pipe.ts         # uuidParam('id'): ParseUUIDPipe trả lỗi VALIDATION_ERROR có details
+│   │   ├── validators/
+│   │   │   └── is-greater-than-or-equal-to.decorator.ts  # So sánh hai field (maxPrice ≥ minPrice, env MAX ≥ MIN)
 │   │   ├── transformers/
 │   │   │   └── bigint.transformer.ts      # bigint (string từ pg) <-> number, kiểm tra safe integer
 │   │   └── utils/

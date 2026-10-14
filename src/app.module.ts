@@ -3,6 +3,7 @@ import { ConfigModule, type ConfigType } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { configModuleOptions, databaseConfig } from './config/configuration';
 import { buildTypeOrmOptions } from './database/typeorm.options';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { buildTypeOrmOptions } from './database/typeorm.options';
       useFactory: (db: ConfigType<typeof databaseConfig>) =>
         buildTypeOrmOptions(db),
     }),
+    ProductsModule,
   ],
 })
 export class AppModule {}

@@ -23,6 +23,7 @@ export function setupSwagger(app: INestApplication): void {
       ].join(' '),
     )
     .setVersion('1.0')
+    .addTag('products', 'Product catalog and stock')
     .build();
 
   // A factory defers building the document until it is first requested,
