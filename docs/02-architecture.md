@@ -119,7 +119,8 @@ flowchart LR
 │   │   └── dto/ (create, query, response, order-jobs-response)
 │   ├── notifications/
 │   │   ├── notifications.module.ts
-│   │   ├── notifications.repository.ts    # insertIfAbsent (ON CONFLICT DO NOTHING)
+│   │   ├── notifications.repository.ts    # insertIfAbsent (ON CONFLICT ON CONSTRAINT … DO NOTHING RETURNING id)
+│   │   ├── notification-type.enum.ts      # NotificationType (ORDER_CONFIRMED), NotificationChannel (EMAIL)
 │   │   └── entities/notification-log.entity.ts
 │   ├── outbox/
 │   │   ├── outbox.module.ts
