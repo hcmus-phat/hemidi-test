@@ -47,7 +47,7 @@ flowchart LR
 | Framework | NestJS 12 | `@nestjs/config`, `@nestjs/typeorm`, `@nestjs/bullmq`, `@nestjs/swagger` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
 | ORM | TypeORM 1.x | `synchronize: false`, migration bằng TypeORM CLI |
 | DB | PostgreSQL 16 (local), Neon (production) | `gen_random_uuid()` có sẵn từ PG13 |
-| Queue | BullMQ 6.x | Job scheduler dùng `upsertJobScheduler` |
+| Queue | BullMQ 6.x, `@nestjs/bullmq` 12, ioredis 5.x | Job scheduler dùng `upsertJobScheduler`. BullMQ 6 coi `ioredis` là peer dependency tùy chọn nên dự án tự khai báo nó ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
 | Redis | Redis 7 (local), Redis Cloud (production) | Bắt buộc `maxmemory-policy noeviction` ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) |
 | Validate | class-validator, class-transformer | `ValidationPipe` toàn cục |
 | Test | Jest (`@nestjs/testing`), ts-jest | Unit test có mock. Integration test dùng Postgres/Redis của docker-compose. Jest trên Node 22 không `require()` được ES module, nên các gói `@nestjs/*` được chuyển sang CommonJS khi test bằng `test/esm-to-cjs.transformer.js` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
@@ -97,7 +97,9 @@ flowchart LR
 │   │   ├── transformers/
 │   │   │   └── bigint.transformer.ts      # bigint (string từ pg) <-> number, kiểm tra safe integer
 │   │   └── utils/
-│   │       └── sleep.ts
+│   │       ├── sleep.ts
+│   │       ├── with-timeout.ts            # withTimeout(promise, ms): giới hạn thời gian chờ Redis
+│   │       └── error-message.ts           # errorMessage(): thông điệp đọc được của mọi lỗi (kể cả AggregateError)
 │   ├── products/
 │   │   ├── products.module.ts
 │   │   ├── products.controller.ts
@@ -126,8 +128,10 @@ flowchart LR
 │   │   ├── outbox-event-type.enum.ts      # OutboxEventType, OutboxAggregateType, payload ORDER_CREATED
 │   │   └── entities/outbox-event.entity.ts
 │   ├── queue/
-│   │   ├── queue.module.ts                # BullModule.forRootAsync + registerQueue + producer
+│   │   ├── queue.module.ts                # registerQueue + producer; QueueModule.forRoot(role) = BullModule.forRootAsync
 │   │   ├── queue.constants.ts             # ORDER_PROCESSING_QUEUE, OrderJobName, buildOrderJobId()
+│   │   ├── redis-connection.ts            # parseRedisUrl(), buildRedisConnection(url, role): option khác nhau cho API và worker
+│   │   ├── redis-error-logger.ts          # Listener 'error' cho Queue/Worker, không lặp log khi Redis tắt
 │   │   ├── order-queue.producer.ts        # enqueueProcessOrder() (relay gọi), getOrderJobs() (API gọi)
 │   │   ├── order-processing.processor.ts  # WorkerHost, chỉ có trong WorkerModule
 │   │   ├── order-jobs.scheduler.ts        # upsertJobScheduler khi worker khởi động
@@ -152,9 +156,11 @@ flowchart TD
   AppModule --> ProductsModule
   AppModule --> OrdersModule
   AppModule --> HealthModule
+  AppModule --> QueueRootApi["QueueModule.forRoot(Api)<br/>enableOfflineQueue: false"]
 
   WorkerModule --> ConfigModule
   WorkerModule --> DatabaseModule
+  WorkerModule --> QueueRootWorker["QueueModule.forRoot(Worker)<br/>maxRetriesPerRequest: null"]
   WorkerModule --> OrdersModule
   WorkerModule --> QueueModule
   WorkerModule --> OutboxModule
@@ -273,11 +279,15 @@ Cách hiện thực (`src/config/`):
 - `DATABASE_URL` và `REDIS_URL` **bắt buộc**, không có giá trị mặc định: thiếu thì dừng ngay, tránh việc bản deploy âm thầm kết nối tới `localhost`. Các biến còn lại nếu không khai báo sẽ lấy giá trị ở cột "Mặc định (dev)".
 - `configuration.ts`: các namespace có kiểu (`registerAs`): `app`, `database`, `redis`, `jobs`, `outbox`, `worker`, `orders`, `swagger`. Inject bằng `@Inject(databaseConfig.KEY) config: ConfigType<typeof databaseConfig>`. `ConfigModule.forRoot` dùng chung một bộ option cho API và worker, biến môi trường thật luôn được ưu tiên hơn file `.env`.
 
-**Kết nối Redis:**
+**Kết nối Redis** (`src/queue/redis-connection.ts`, `QueueModule.forRoot(role)`):
 
-- Tạo connection options từ `REDIS_URL`: parse host, port, username, password, và bật `tls` khi URL là `rediss://`.
-- Worker phải đặt `maxRetriesPerRequest: null` (BullMQ yêu cầu với kết nối blocking).
-- Kết nối Redis trên API (chỉ đọc trạng thái job) nên đặt `enableOfflineQueue: false` để trả `503` ngay khi Redis không truy cập được, thay vì treo request.
+- BullMQ 6 không tự cài `ioredis` nữa (peer dependency tùy chọn), nên dự án khai báo `ioredis` 5.x trong `dependencies` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)).
+- `parseRedisUrl()` tạo connection options từ `REDIS_URL`: host (bỏ ngoặc của IPv6), port (mặc định 6379), username, password (giải mã `%xx`), số DB ở path (`/2`, phải là số nguyên không âm), và `tls: {}` khi URL là `rediss://`.
+- Mỗi tiến trình import `QueueModule.forRoot(role)` đúng một lần ở module gốc. Đây là cấu hình BullMQ toàn cục của tiến trình đó, `QueueModule` (đăng ký queue và producer) dùng lại nó. Tạo kết nối không chờ Redis, nên API và worker vẫn khởi động được khi Redis đang tắt.
+- **API** (`RedisConnectionRole.Api`): `enableOfflineQueue: false`. Khi mất kết nối, lệnh Redis bị từ chối ngay thay vì nằm chờ trong offline queue của ioredis, nên `GET /orders/:id/jobs` trả `503` ngay.
+- **Worker** (`RedisConnectionRole.Worker`): `maxRetriesPerRequest: null` (BullMQ yêu cầu với kết nối blocking của `Worker`). Offline queue **phải** để bật: với `enableOfflineQueue: false`, lệnh lấy job của `Worker` bị lỗi ngay và vòng lặp của BullMQ thử lại liên tục không nghỉ. Khi Redis chạy lại, lệnh đang chờ được gửi đi và `Worker` tự chạy tiếp.
+- Ngoài ra, mọi lời gọi Redis từ code của dự án (`OrderQueueProducer.enqueueProcessOrder` và `getOrderJobs`) đều có timeout `REDIS_OPERATION_TIMEOUT_MS` = 3000ms (`withTimeout`). Timeout này cần cả với API: khi tiến trình khởi động lúc Redis đang tắt, BullMQ chờ kết nối đầu tiên và mọi lệnh chờ theo, `enableOfflineQueue` không giúp được. Lệnh bị bỏ dở có thể vẫn chạy sau đó, nên chỉ dùng cho thao tác lặp lại được (đọc, hoặc `add` với `jobId` cố định).
+- `Queue` và `Worker` phát sự kiện `error` mỗi lần ioredis thử kết nối lại thất bại. Không có listener thì BullMQ in từng lỗi kèm stack. `createRedisErrorLogger` ghi một dòng `WARN` cho mỗi thông điệp lỗi khác nhau, lặp lại tối đa một lần mỗi phút. `errorMessage()` lấy thông điệp của các lỗi con khi lỗi là `AggregateError` không có thông điệp (kết nối tới `localhost` thử cả `::1` lẫn `127.0.0.1`).
 
 ## 8. Quy ước code
 

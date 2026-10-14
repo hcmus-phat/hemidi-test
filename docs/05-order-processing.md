@@ -269,6 +269,8 @@ await this.queue.add(
 );
 ```
 
+Code thật (`src/queue/order-queue.producer.ts`) bọc lời gọi `add` (và `getJob` của §10) bằng `withTimeout(…, REDIS_OPERATION_TIMEOUT_MS = 3000)`: Redis không trả lời trong 3s thì relay nhận lỗi và ghi vào outbox thay vì treo cả lô ([02 §7](02-architecture.md#7-cấu-hình-biến-môi-trường)). Lệnh `add` bị bỏ dở vẫn có thể chạy khi Redis sống lại, việc này an toàn nhờ `jobId` cố định.
+
 ### 4.2 Dòng thời gian khi lỗi liên tục
 
 | Lần chạy | Bắt đầu | Thời gian chạy | Nếu lỗi |

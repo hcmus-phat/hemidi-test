@@ -279,6 +279,11 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
   - Jest dùng hệ module CommonJS riêng và chỉ `require()` được ES module từ Node 24.9. Để chạy test trên Node 22, `jest.config.js` cho Jest chuyển các gói `@nestjs/*` sang CommonJS bằng `test/esm-to-cjs.transformer.js` (dùng `ts.transpileModule`). Transformer thay `import.meta.url` bằng URL của file và bỏ các dòng tự khai báo lại `require`/`__filename`/`__dirname` (ví dụ `const require = createRequire(import.meta.url)` trong `@nestjs/swagger`), vì trong CommonJS các biến này đã có sẵn. Code production không đi qua transformer này.
   - Không dùng Vitest (mặc định của template ESM của NestJS 12): `npm install vitest` với npm 10.9 bị lỗi `Cannot read properties of null (reading 'edgesOut')` do chuỗi peer dependency tùy chọn của Vite 8. Lint dùng ESLint theo kế hoạch, không dùng oxlint của template.
   - TypeScript 6.0 (`~6.0`): `@nestjs/cli` 12 khóa `~6.0.2`, typescript-eslint hỗ trợ `<6.1`, ts-jest hỗ trợ `<7`. `tsconfig` bật `isolatedModules` (ts-jest yêu cầu khi dùng `nodenext`), nên kiểu chỉ dùng trong chữ ký có decorator phải `import type`.
+- **Ghi nhận khi thêm queue (BullMQ 6.3, `@nestjs/bullmq` 12):**
+  - BullMQ 6 hỗ trợ nhiều driver Redis và coi `ioredis` là **peer dependency tùy chọn**: không cài thì `new Queue()` báo `BullMQ could not load the optional 'ioredis' package`. Dự án khai báo `ioredis` trong `dependencies`. Chọn **ioredis 5.x** chứ không phải 6.0, vì TypeORM 1.1 khai báo peer tùy chọn `ioredis ^5.0.4` (cho cache Redis của nó) và npm từ chối cài ioredis 6 (`ERESOLVE`). BullMQ chấp nhận `ioredis >= 5`.
+  - BullMQ 6 vẫn nhận `connection` là object option của ioredis (hoặc `url`). Dự án tự parse `REDIS_URL` thành object để thấy rõ từng option, kể cả TLS ([02 §7](02-architecture.md#7-cấu-hình-biến-môi-trường)).
+  - `@nestjs/bullmq` tạo `Worker` của `@Processor` với **cùng** connection options của queue đã đăng ký, nên mỗi tiến trình chỉ có một bộ option: API dùng `enableOfflineQueue: false`, worker dùng `maxRetriesPerRequest: null` và giữ offline queue ([02 §7](02-architecture.md#7-cấu-hình-biến-môi-trường)).
+  - `job.attemptsMade` chỉ tăng **sau** khi một lần chạy kết thúc (`moveToFailed`/`moveToCompleted`), và BullMQ retry khi `attemptsMade + 1 < opts.attempts`. Backoff exponential là `delay × 2^attemptsMade` tính tại lúc lỗi, tức 2s, 4s, 8s. Đã đối chiếu với `dist/esm/classes/job.js` và `backoffs.js` của bản đã cài.
 
 ---
 
@@ -286,6 +291,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-029: ghi nhận BullMQ 6 cần cài `ioredis` riêng (chọn 5.x vì peer của TypeORM 1.1), connection options riêng cho API và worker, ngữ nghĩa `attemptsMade` và công thức backoff đã kiểm tra trong mã nguồn BullMQ |
 | 2026-10-15 | ADR-014: ghi nhận cách đặt `lock_timeout` trong code: `SELECT set_config('lock_timeout', $1, true)`, dạng có tham số của `SET LOCAL` |
 | 2026-10-14 | ADR-029: ghi nhận Nest CLI (dev-only) cần Node ≥ 22.22.3, nên `npm ci` cảnh báo `EBADENGINE` trên 22.13–22.22. `engines.node` giữ `>=22.13` cho runtime |
 | 2026-10-14 | ADR-011: làm rõ hệ quả. Chỉ lỗi 500 ẩn `message`. Lỗi 503 trả thông điệp ngắn, cố định để client biết nên thử lại |
