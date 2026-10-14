@@ -89,6 +89,7 @@ npm run start:worker:dev              # Worker: xem log xử lý job
 | `typeorm` | `typeorm-ts-node-commonjs -d src/database/data-source.ts` | Lệnh gốc cho CLI |
 | `migration:generate` | `npm run typeorm -- migration:generate` | Ví dụ: `npm run migration:generate -- src/database/migrations/CreateOrders` |
 | `migration:run` / `migration:revert` | `npm run typeorm -- migration:run` / `migration:revert` | Chạy / lùi migration (dev) |
+| `migration:show` | `npm run typeorm -- migration:show` | Liệt kê migration đã chạy và đang chờ |
 | `migration:run:prod` | `typeorm -d dist/database/data-source.js migration:run` | Chạy migration từ code đã build |
 | `seed` | `ts-node src/database/seed.ts` | Dữ liệu mẫu |
 | `job:expire-now` | `ts-node src/scripts/expire-now.ts` | Gọi `expireStaleOrders()` một lần, dùng cho MT-09 |
@@ -235,7 +236,7 @@ bootstrap();
 
 - **Không bao giờ** dùng `synchronize`, và **không** chạy migration khi Vercel cold start.
 - Cách 1 (khuyến nghị): Pre-deploy command của Railway, `npm run migration:run:prod`.
-- Cách 2: chạy từ máy local, trỏ vào DB production (nên dùng **direct** connection string của Neon, không qua pooler):
+- Cách 2: chạy từ máy local, trỏ vào DB production (nên dùng **direct** connection string của Neon, không qua pooler). CLI validate env giống lúc app khởi động, nên các biến bắt buộc khác (ví dụ `REDIS_URL`) vẫn phải hợp lệ, lấy từ `.env` local là đủ:
   ```powershell
   $env:DATABASE_URL = "postgres://<user>:<pass>@<host>/<db>?sslmode=require"
   $env:DATABASE_SSL = "true"
