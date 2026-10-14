@@ -133,7 +133,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
   }
 
-  /** Error code for an HTTP error raised by Nest or Express rather than by our code. */
+  /**
+   * Error code for an HTTP error raised by Nest or Express rather than by our code.
+   * A 503 keeps its message, a short fixed text telling the client to retry
+   * (ADR-011). Any other 5xx becomes INTERNAL_ERROR with a hidden message.
+   */
   private fromStatus(status: number, message: string): ApiError {
     const code = ERROR_CODE_BY_STATUS[status];
     if (code) {

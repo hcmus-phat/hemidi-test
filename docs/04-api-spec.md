@@ -75,7 +75,7 @@ Ví dụ lỗi validate (`details` đã được làm phẳng, kể cả với f
 }
 ```
 
-Lỗi 5xx chỉ trả `message: "Internal server error"`. Stack trace và câu SQL chỉ được ghi vào log.
+Lỗi `500 INTERNAL_ERROR` chỉ trả `message: "Internal server error"`. Lỗi `503 SERVICE_UNAVAILABLE` trả một thông điệp ngắn, cố định để client biết nên thử lại, ví dụ `"The database is busy, please retry"` ([ADR-011](10-technical-decisions.md#adr-011-định-dạng-lỗi-và-ngôn-ngữ-thông-báo)). Stack trace, mã SQLSTATE và câu SQL chỉ được ghi vào log. Tham số của câu SQL không được ghi vì có thể chứa email.
 
 ---
 

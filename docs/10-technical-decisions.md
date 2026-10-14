@@ -162,7 +162,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Trạng thái:** Đã duyệt (2026-10-14)
 - **Quyết định:** Mọi lỗi trả `{ statusCode, error, message, details?, path, timestamp }`. `error` là mã máy đọc được (danh mục ở [04 §5](04-api-spec.md#5-danh-mục-mã-lỗi)). `message` viết bằng **tiếng Anh**.
 - **Lý do:** Thống nhất với thông điệp mặc định của class-validator, đúng thông lệ khi viết API.
-- **Hệ quả:** Lỗi 5xx chỉ trả `Internal server error`, chi tiết ghi vào log.
+- **Hệ quả:** Lỗi `500 INTERNAL_ERROR` chỉ trả `Internal server error`, chi tiết ghi vào log. Lỗi `503 SERVICE_UNAVAILABLE` là lỗi tạm thời mà client nên thử lại (chờ khóa quá lâu, deadlock, Redis không kết nối được), nên trả một thông điệp ngắn, cố định do code đặt, ví dụ `The database is busy, please retry`. Thông điệp này không bao giờ chứa stack, SQL hay dữ liệu của request.
 
 ---
 
@@ -285,6 +285,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-14 | ADR-011: làm rõ hệ quả. Chỉ lỗi 500 ẩn `message`. Lỗi 503 trả thông điệp ngắn, cố định để client biết nên thử lại |
 | 2026-10-14 | ADR-029: ghi nhận NestJS 12 chỉ phát hành ES module. Dự án giữ CommonJS (Node ≥ 22.13), Jest dùng transformer chuyển `@nestjs/*` sang CommonJS, TypeScript 6.0 |
 | 2026-10-14 | ADR-028 chuyển sang Đã duyệt theo kế hoạch implement. Thêm ADR-029 (phiên bản thư viện) khi bắt đầu code |
 | 2026-10-14 | Tạo nhật ký. Rà soát 12 điểm cần quyết định. Thay đổi so với bản nháp: retry từ 3 lên 4 lần chạy (ADR-001), đẩy job qua Outbox thay cho "201 + chờ hết hạn" (ADR-003), tiền từ `numeric(12,2)` sang `bigint` VND (ADR-007) |
