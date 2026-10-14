@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-codes';
 import { ordersConfig } from '../config/configuration';
+import { NotificationsRepository } from '../notifications/notifications.repository';
 import {
   OutboxAggregateType,
   OutboxEventType,
@@ -56,6 +57,7 @@ describe('OrdersService', () => {
     findPage: jest.fn(),
   };
   const outboxRepo = { add: jest.fn() };
+  const notificationsRepo = { insertIfAbsent: jest.fn() };
 
   let service: OrdersService;
 
@@ -71,6 +73,7 @@ describe('OrdersService', () => {
         { provide: ProductStockRepository, useValue: stockRepo },
         { provide: OrdersRepository, useValue: ordersRepo },
         { provide: OutboxRepository, useValue: outboxRepo },
+        { provide: NotificationsRepository, useValue: notificationsRepo },
         { provide: ordersConfig.KEY, useValue: { lockTimeoutMs: 5000 } },
       ],
     }).compile();

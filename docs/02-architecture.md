@@ -98,7 +98,8 @@ flowchart LR
 │   │   ├── transformers/
 │   │   │   └── bigint.transformer.ts      # bigint (string từ pg) <-> number, kiểm tra safe integer
 │   │   └── utils/
-│   │       ├── sleep.ts
+│   │       ├── sleep.ts                   # Sleeper: provider sleep(ms), test thay được
+│   │       ├── random-source.ts           # RANDOM_SOURCE: token inject Math.random
 │   │       ├── with-timeout.ts            # withTimeout(promise, ms): giới hạn thời gian chờ Redis
 │   │       ├── error-message.ts           # errorMessage(): thông điệp đọc được của mọi lỗi (kể cả AggregateError)
 │   │       └── truncate.ts                # Cắt thông điệp lỗi trước khi lưu DB (last_error, failure_reason)
@@ -136,9 +137,9 @@ flowchart LR
 │   │   ├── redis-connection.ts            # parseRedisUrl(), buildRedisConnection(url, role): option khác nhau cho API và worker
 │   │   ├── redis-error-logger.ts          # Listener 'error' cho Queue/Worker, không lặp log khi Redis tắt
 │   │   ├── order-queue.producer.ts        # enqueueProcessOrder() (relay gọi), getOrderJobs() (API gọi)
-│   │   ├── order-processing.processor.ts  # WorkerHost, chỉ có trong WorkerModule
+│   │   ├── order-processing.processor.ts  # WorkerHost, chỉ có trong WorkerModule; đặt concurrency, đóng Worker ở onModuleDestroy
 │   │   ├── order-jobs.scheduler.ts        # upsertJobScheduler khi worker khởi động
-│   │   └── failure-simulator.ts           # Bọc Math.random để test được
+│   │   └── failure-simulator.ts           # maybeFail(): ném SimulatedFailureError với xác suất JOB_FAILURE_RATE (RANDOM_SOURCE)
 │   └── health/
 │       └── health.controller.ts           # GET /health
 ├── test/
@@ -167,7 +168,7 @@ flowchart TD
   WorkerModule --> OrdersModule
   WorkerModule --> QueueModule
   WorkerModule --> OutboxModule
-  WorkerModule -.->|"providers"| Processor["OrderProcessingProcessor<br/>OrderJobsScheduler<br/>OutboxRelayService<br/>FailureSimulator"]
+  WorkerModule -.->|"providers"| Processor["OrderProcessingProcessor<br/>OrderJobsScheduler<br/>OutboxRelayService<br/>FailureSimulator · Sleeper · RANDOM_SOURCE"]
 
   OrdersModule --> ProductsModule
   OrdersModule --> NotificationsModule

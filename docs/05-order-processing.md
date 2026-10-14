@@ -390,6 +390,15 @@ async failOrder(orderId: string, reason: string): Promise<boolean> {
 }
 ```
 
+Code thật (`src/queue/order-processing.processor.ts`, `src/orders/orders.service.ts`):
+
+- **Concurrency:** option của `@Processor` được cố định lúc định nghĩa class, trước khi config được nạp, nên không đọc được `WORKER_CONCURRENCY`. Processor đặt `this.worker.concurrency = WORKER_CONCURRENCY` trong `onModuleInit`. Hook này chạy sau khi `@nestjs/bullmq` tạo `Worker` (module của BullMQ nằm sâu hơn nên được init trước), và BullMQ đọc lại giá trị này trước mỗi lần lấy job.
+- **Đóng Worker:** processor gọi `await this.worker.close()` trong `onModuleDestroy` (chờ job đang chạy xong). Nest gọi hook tắt máy theo thứ tự từ module gốc vào trong, nên nếu để `@nestjs/bullmq` tự đóng `Worker` ở `onApplicationShutdown`, DataSource của TypeORM (module nông hơn) đã bị đóng trước, và job đang chạy sẽ lỗi khi ghi DB.
+- **Thời gian xử lý:** số nguyên ngẫu nhiên trong `[JOB_PROCESSING_MIN_MS, JOB_PROCESSING_MAX_MS]`, lấy từ `RANDOM_SOURCE` (`Math.random` trong worker). `FailureSimulator.maybeFail()` ném `SimulatedFailureError('Simulated random processing failure')` khi `random() < JOB_FAILURE_RATE`.
+- **Log:** mỗi dòng có `orderId`, `attempt n/N` và `jobId`, ví dụ `Processing order <id> (attempt 2/4, job order-<id>)`, `Order <id> confirmed (…)`, `Order <id> failed (…): <lỗi>`, `Order <id> skipped (…): it is CONFIRMED`.
+- **Kết quả trả về** (lưu ở `returnvalue` của job): `{ result: 'CONFIRMED' }`, `{ skipped: true, reason: 'Order is CANCELLED' }` hoặc `{ skipped: true, reason: 'Order is no longer PENDING' }` (CAS thua sau khi đã sleep).
+- Listener `@OnWorkerEvent('error')` ghi lỗi Redis của `Worker` bằng `createRedisErrorLogger` ([02 §7](02-architecture.md#7-cấu-hình-biến-môi-trường)).
+
 **Quyết định thiết kế:**
 
 - **Bù trừ ngay trong processor ở lần thử cuối**, không dùng event `failed` của worker ([ADR-017](10-technical-decisions.md#adr-017-bù-trừ-ở-lần-thử-cuối)). Lý do: handler của event không được BullMQ `await` và chạy sau khi job đã bị đánh dấu `failed`. Nếu tiến trình chết đúng lúc đó, bước bù trừ bị mất mà không để lại dấu vết. Bù trừ trong processor gắn chặt với lần thử, và vẫn có job hết hạn làm lưới an toàn.

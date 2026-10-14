@@ -8,6 +8,8 @@ import {
   InsufficientStockDetail,
 } from '../common/errors/app.exception';
 import { ordersConfig } from '../config/configuration';
+import { NotificationType } from '../notifications/notification-type.enum';
+import { NotificationsRepository } from '../notifications/notifications.repository';
 import {
   OutboxAggregateType,
   OutboxEventType,
@@ -32,6 +34,7 @@ export class OrdersService {
     private readonly ordersRepo: OrdersRepository,
     private readonly stockRepo: ProductStockRepository,
     private readonly outboxRepo: OutboxRepository,
+    private readonly notificationsRepo: NotificationsRepository,
     @Inject(ordersConfig.KEY)
     private readonly config: ConfigType<typeof ordersConfig>,
   ) {}
@@ -148,6 +151,45 @@ export class OrdersService {
     });
     // CANCELLED is final, so reading after the commit returns what was committed.
     return this.findOne(orderId);
+  }
+
+  /** Current status of an order, or null when it does not exist (read by the worker). */
+  getStatus(orderId: string): Promise<OrderStatus | null> {
+    return this.ordersRepo.findStatus(this.dataSource.manager, orderId);
+  }
+
+  /**
+   * Confirms an order for the worker, in one transaction (docs/05 §5):
+   *
+   * - CAS PENDING -> CONFIRMED (confirmed_at = now()).
+   * - Only if the CAS matched: record the ORDER_CONFIRMED notification. The
+   *   unique (order_id, type) constraint makes a second one impossible.
+   *
+   * Returns false when the order is no longer PENDING (cancelled, expired or
+   * already confirmed by another run of the job): nothing is written then.
+   * Running it twice is therefore harmless (FR-Q05).
+   */
+  confirmOrder(orderId: string): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const order = await this.ordersRepo.transitionStatus(
+        manager,
+        orderId,
+        [OrderStatus.PENDING],
+        OrderStatus.CONFIRMED,
+      );
+      if (!order) {
+        return false;
+      }
+
+      await this.notificationsRepo.insertIfAbsent(manager, {
+        orderId,
+        type: NotificationType.ORDER_CONFIRMED,
+        recipient: order.customerEmail,
+        subject: `Order ${orderId} confirmed`,
+        payload: { orderId, totalAmount: order.totalAmount },
+      });
+      return true;
+    });
   }
 
   /**

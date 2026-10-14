@@ -1,0 +1,171 @@
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import {
+  Inject,
+  Logger,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
+import { Job, UnrecoverableError } from 'bullmq';
+import { errorMessage } from '../common/utils/error-message';
+import {
+  RANDOM_SOURCE,
+  type RandomSource,
+} from '../common/utils/random-source';
+import { Sleeper } from '../common/utils/sleep';
+import { workerConfig } from '../config/configuration';
+import { OrderStatus } from '../orders/order-status.enum';
+import { OrdersService } from '../orders/orders.service';
+import { FailureSimulator } from './failure-simulator';
+import {
+  ORDER_PROCESSING_QUEUE,
+  OrderJobName,
+  ProcessOrderJobData,
+} from './queue.constants';
+import { createRedisErrorLogger } from './redis-error-logger';
+
+/** What a `process-order` job returns; BullMQ stores it as the job's return value. */
+export type ProcessOrderResult =
+  { result: 'CONFIRMED' } | { skipped: true; reason: string };
+
+/**
+ * Consumes the order-processing queue (docs/05 §5). Provided by WorkerModule
+ * only: `@nestjs/bullmq` starts a BullMQ Worker for every @Processor it
+ * finds, which must never happen in the API (docs/02 §2).
+ *
+ * It only orchestrates: simulated processing time and failures, attempt
+ * bookkeeping and logs. The database work, guarded by CAS, is done by
+ * OrdersService.
+ */
+@Processor(ORDER_PROCESSING_QUEUE)
+export class OrderProcessingProcessor
+  extends WorkerHost
+  implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy
+{
+  private readonly logger = new Logger(OrderProcessingProcessor.name);
+  private readonly logRedisError = createRedisErrorLogger(
+    this.logger,
+    `Worker ${ORDER_PROCESSING_QUEUE}`,
+  );
+
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly failureSimulator: FailureSimulator,
+    private readonly sleeper: Sleeper,
+    @Inject(RANDOM_SOURCE) private readonly random: RandomSource,
+    @Inject(workerConfig.KEY)
+    private readonly config: ConfigType<typeof workerConfig>,
+  ) {
+    super();
+  }
+
+  /**
+   * The options of @Processor are fixed when the class is defined, before
+   * the configuration is loaded, so WORKER_CONCURRENCY is applied here, right
+   * after @nestjs/bullmq created the Worker. BullMQ reads it before fetching
+   * each job.
+   */
+  onModuleInit(): void {
+    this.worker.concurrency = this.config.concurrency;
+  }
+
+  onApplicationBootstrap(): void {
+    this.logger.log(
+      `Worker started on queue ${ORDER_PROCESSING_QUEUE} (concurrency ${this.worker.concurrency})`,
+    );
+  }
+
+  /**
+   * Stops taking jobs and waits for the jobs in progress. It must happen
+   * here: @nestjs/bullmq would close the Worker in onApplicationShutdown,
+   * after TypeORM closed the database the jobs still need.
+   */
+  async onModuleDestroy(): Promise<void> {
+    await this.worker.close();
+    this.logger.log(`Worker on queue ${ORDER_PROCESSING_QUEUE} closed`);
+  }
+
+  @OnWorkerEvent('error')
+  onWorkerError(error: Error): void {
+    this.logRedisError(error);
+  }
+
+  async process(job: Job): Promise<unknown> {
+    // Any name that is not an OrderJobName ends in the default branch.
+    switch (job.name as OrderJobName) {
+      case OrderJobName.ProcessOrder:
+        return this.processOrder(job as Job<ProcessOrderJobData>);
+      default:
+        // Retrying cannot help with a job this worker does not know.
+        throw new UnrecoverableError(`Unknown job name: ${job.name}`);
+    }
+  }
+
+  /**
+   * One attempt at confirming an order:
+   *
+   * 1. Read the status first. Not found: fail without retry. No longer
+   *    PENDING (cancelled, expired, already confirmed): done, nothing to do.
+   * 2. Simulate the work (JOB_PROCESSING_MIN_MS..MAX_MS) and a random failure
+   *    (JOB_FAILURE_RATE). A failure is thrown to BullMQ, which retries the
+   *    job after the backoff delay.
+   * 3. Confirm the order and record its notification in one transaction.
+   *    The CAS inside makes this safe even when the status changed after
+   *    step 1 (docs/05 §6).
+   */
+  private async processOrder(
+    job: Job<ProcessOrderJobData>,
+  ): Promise<ProcessOrderResult> {
+    const { orderId } = job.data;
+    const attempt = this.describeAttempt(job);
+
+    const status = await this.ordersService.getStatus(orderId);
+    if (status === null) {
+      throw new UnrecoverableError(`Order ${orderId} not found`);
+    }
+    if (status !== OrderStatus.PENDING) {
+      this.logger.log(`Order ${orderId} skipped (${attempt}): it is ${status}`);
+      return { skipped: true, reason: `Order is ${status}` };
+    }
+
+    this.logger.log(`Processing order ${orderId} (${attempt})`);
+    try {
+      await this.sleeper.sleep(this.processingTimeMs());
+      this.failureSimulator.maybeFail();
+
+      const confirmed = await this.ordersService.confirmOrder(orderId);
+      if (!confirmed) {
+        this.logger.log(
+          `Order ${orderId} skipped (${attempt}): no longer PENDING`,
+        );
+        return { skipped: true, reason: 'Order is no longer PENDING' };
+      }
+      this.logger.log(`Order ${orderId} confirmed (${attempt})`);
+      return { result: 'CONFIRMED' };
+    } catch (error) {
+      this.logger.warn(
+        `Order ${orderId} failed (${attempt}): ${errorMessage(error)}`,
+      );
+      // BullMQ records the error and schedules a retry if attempts remain.
+      throw error;
+    }
+  }
+
+  /** A random duration in [JOB_PROCESSING_MIN_MS, JOB_PROCESSING_MAX_MS]. */
+  private processingTimeMs(): number {
+    const { processingMinMs, processingMaxMs } = this.config;
+    return (
+      processingMinMs +
+      Math.floor(this.random() * (processingMaxMs - processingMinMs + 1))
+    );
+  }
+
+  /**
+   * "attempt 2/4". While a job runs, `attemptsMade` counts the attempts that
+   * already ended, so the current one is attemptsMade + 1.
+   */
+  private describeAttempt(job: Job): string {
+    return `attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1}, job ${job.id}`;
+  }
+}
