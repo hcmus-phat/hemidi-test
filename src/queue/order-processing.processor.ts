@@ -120,20 +120,18 @@ export class OrderProcessingProcessor
   }
 
   /**
-   * One attempt at confirming an order:
+   * Runs one attempt (see `attemptToConfirm`) and decides what to do when it
+   * throws. Every error of the attempt comes here, wherever it happened:
+   * reading the status, the simulated failure, or confirming.
    *
-   * 1. Read the status first. Not found: fail without retry. No longer
-   *    PENDING (cancelled, expired, already confirmed): done, nothing to do.
-   * 2. Simulate the work (JOB_PROCESSING_MIN_MS..MAX_MS) and a random failure
-   *    (JOB_FAILURE_RATE). A failure is thrown to BullMQ, which retries the
-   *    job after the backoff delay.
-   * 3. Confirm the order and record its notification in one transaction.
-   *    The CAS inside makes this safe even when the status changed after
-   *    step 1 (docs/05 §6).
-   *
-   * When an attempt fails and it was the last one, the order is marked
-   * FAILED and its stock released before the error goes back to BullMQ,
-   * which then moves the job to `failed` (ADR-017).
+   * - Order not found (UnrecoverableError): BullMQ fails the job at once,
+   *   without retry. There is no order, so nothing to compensate.
+   * - Any other error before the last attempt: rethrown, and BullMQ retries
+   *   the job after the backoff delay.
+   * - Any other error on the last attempt: the order is marked FAILED and
+   *   its stock released, then the error goes back to BullMQ, which moves the
+   *   job to `failed` (ADR-017). failOrder is guarded by CAS, so it changes
+   *   nothing when the order is no longer PENDING.
    */
   private async processOrder(
     job: Job<ProcessOrderJobData>,
@@ -141,30 +139,17 @@ export class OrderProcessingProcessor
     const { orderId } = job.data;
     const attempt = this.describeAttempt(job);
 
-    const status = await this.ordersService.getStatus(orderId);
-    if (status === null) {
-      throw new UnrecoverableError(`Order ${orderId} not found`);
-    }
-    if (status !== OrderStatus.PENDING) {
-      this.logger.log(`Order ${orderId} skipped (${attempt}): it is ${status}`);
-      return { skipped: true, reason: `Order is ${status}` };
-    }
-
-    this.logger.log(`Processing order ${orderId} (${attempt})`);
     try {
-      await this.sleeper.sleep(this.processingTimeMs());
-      this.failureSimulator.maybeFail();
-
-      const confirmed = await this.ordersService.confirmOrder(orderId);
-      if (!confirmed) {
-        this.logger.log(
-          `Order ${orderId} skipped (${attempt}): no longer PENDING`,
-        );
-        return { skipped: true, reason: 'Order is no longer PENDING' };
-      }
-      this.logger.log(`Order ${orderId} confirmed (${attempt})`);
-      return { result: 'CONFIRMED' };
+      // `return await`: without it, a rejection would skip this catch.
+      return await this.attemptToConfirm(orderId, attempt);
     } catch (error) {
+      if (error instanceof UnrecoverableError) {
+        this.logger.warn(
+          `Order ${orderId} failed without retry (${attempt}): ${error.message}`,
+        );
+        throw error;
+      }
+
       if (!isFinalAttempt(job)) {
         this.logger.warn(
           `Order ${orderId} failed (${attempt}), BullMQ will retry it: ${errorMessage(error)}`,
@@ -179,6 +164,47 @@ export class OrderProcessingProcessor
       // BullMQ records the error as the job's failedReason and moves it to failed.
       throw error;
     }
+  }
+
+  /**
+   * One attempt at confirming an order:
+   *
+   * 1. Read the status first. Not found: fail without retry. No longer
+   *    PENDING (cancelled, expired, already confirmed): done, nothing to do.
+   * 2. Simulate the work (JOB_PROCESSING_MIN_MS..MAX_MS) and a random failure
+   *    (JOB_FAILURE_RATE).
+   * 3. Confirm the order and record its notification in one transaction.
+   *    The CAS inside makes this safe even when the status changed after
+   *    step 1 (docs/05 §6).
+   *
+   * Errors are thrown to `processOrder`.
+   */
+  private async attemptToConfirm(
+    orderId: string,
+    attempt: string,
+  ): Promise<ProcessOrderResult> {
+    const status = await this.ordersService.getStatus(orderId);
+    if (status === null) {
+      throw new UnrecoverableError(`Order ${orderId} not found`);
+    }
+    if (status !== OrderStatus.PENDING) {
+      this.logger.log(`Order ${orderId} skipped (${attempt}): it is ${status}`);
+      return { skipped: true, reason: `Order is ${status}` };
+    }
+
+    this.logger.log(`Processing order ${orderId} (${attempt})`);
+    await this.sleeper.sleep(this.processingTimeMs());
+    this.failureSimulator.maybeFail();
+
+    const confirmed = await this.ordersService.confirmOrder(orderId);
+    if (!confirmed) {
+      this.logger.log(
+        `Order ${orderId} skipped (${attempt}): no longer PENDING`,
+      );
+      return { skipped: true, reason: 'Order is no longer PENDING' };
+    }
+    this.logger.log(`Order ${orderId} confirmed (${attempt})`);
+    return { result: 'CONFIRMED' };
   }
 
   /**

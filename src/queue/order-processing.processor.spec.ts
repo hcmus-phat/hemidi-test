@@ -130,18 +130,23 @@ describe('OrderProcessingProcessor', () => {
       });
     });
 
-    it('fails without retry (UnrecoverableError) when the order does not exist', async () => {
-      ordersService.getStatus.mockResolvedValue(null);
+    it.each([0, 3])(
+      'fails without retry (UnrecoverableError) when the order does not exist, with nothing to compensate (attemptsMade %d of 4)',
+      async (attemptsMade) => {
+        ordersService.getStatus.mockResolvedValue(null);
 
-      const error = await processor
-        .process(processOrderJob())
-        .catch((e: unknown) => e);
+        const error = await processor
+          .process(processOrderJob(attemptsMade, 4))
+          .catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(UnrecoverableError);
-      expect(error).toMatchObject({ message: `Order ${ORDER_ID} not found` });
-      expect(sleeper.sleep).not.toHaveBeenCalled();
-      expect(ordersService.failOrder).not.toHaveBeenCalled();
-    });
+        expect(error).toBeInstanceOf(UnrecoverableError);
+        expect(error).toMatchObject({
+          message: `Order ${ORDER_ID} not found`,
+        });
+        expect(sleeper.sleep).not.toHaveBeenCalled();
+        expect(ordersService.failOrder).not.toHaveBeenCalled();
+      },
+    );
 
     it('UT-08 on the last attempt (attemptsMade 3 of 4), marks the order FAILED and rethrows', async () => {
       failureSimulator.maybeFail.mockImplementation(() => {
@@ -187,6 +192,34 @@ describe('OrderProcessingProcessor', () => {
         ORDER_ID,
         'Connection terminated unexpectedly',
       );
+    });
+
+    it('on the last attempt, a database error while reading the status also marks the order FAILED', async () => {
+      const dbError = new Error('Connection terminated unexpectedly');
+      ordersService.getStatus.mockRejectedValue(dbError);
+
+      await expect(processor.process(processOrderJob(3, 4))).rejects.toBe(
+        dbError,
+      );
+
+      expect(ordersService.failOrder).toHaveBeenCalledTimes(1);
+      expect(ordersService.failOrder).toHaveBeenCalledWith(
+        ORDER_ID,
+        'Connection terminated unexpectedly',
+      );
+      expect(sleeper.sleep).not.toHaveBeenCalled();
+      expect(ordersService.confirmOrder).not.toHaveBeenCalled();
+    });
+
+    it('before the last attempt, a database error while reading the status is rethrown for a retry, without failOrder', async () => {
+      const dbError = new Error('Connection terminated unexpectedly');
+      ordersService.getStatus.mockRejectedValue(dbError);
+
+      await expect(processor.process(processOrderJob(2, 4))).rejects.toBe(
+        dbError,
+      );
+
+      expect(ordersService.failOrder).not.toHaveBeenCalled();
     });
 
     it('keeps the error of the attempt when failOrder itself fails', async () => {

@@ -303,6 +303,7 @@ sequenceDiagram
 
   Q->>W: process-order (attempt n)
   W->>S: getStatus(orderId)
+  Note over W,S: Lỗi ở bất kỳ bước nào (kể cả getStatus) đi theo hai nhánh lỗi cuối sơ đồ, retry hoặc failOrder ở lần cuối
   alt không tìm thấy đơn
     W-->>Q: UnrecoverableError (không retry)
   else status khác PENDING
@@ -339,23 +340,29 @@ export class OrderProcessingProcessor extends WorkerHost {
 
   private async processOrder(job: Job<ProcessOrderJobData>) {
     const { orderId } = job.data;
-    const status = await this.ordersService.getStatus(orderId);
-    if (status === null) throw new UnrecoverableError(`Order ${orderId} not found`);
-    if (status !== OrderStatus.PENDING) return { skipped: true, reason: `Order is ${status}` };
-
     try {
-      await this.sleeper.sleep(this.randomDelay());   // JOB_PROCESSING_MIN_MS..MAX_MS
-      this.failureSimulator.maybeFail();              // throw với xác suất JOB_FAILURE_RATE
-      const confirmed = await this.ordersService.confirmOrder(orderId);
-      return confirmed ? { result: 'CONFIRMED' } : { skipped: true, reason: 'Order no longer PENDING' };
+      // Mọi bước của lần thử nằm trong try, kể cả đọc trạng thái: lỗi DB ở bước nào cũng được bù trừ ở lần cuối
+      return await this.attemptToConfirm(orderId);
     } catch (error) {
-      if (this.isFinalAttempt(job)) {
+      // Không tìm thấy đơn: BullMQ cho job failed ngay, không có gì để bù trừ
+      if (!(error instanceof UnrecoverableError) && this.isFinalAttempt(job)) {
         await this.ordersService
           .failOrder(orderId, toMessage(error))
           .catch((e) => this.logger.error(`failOrder failed for ${orderId}; expiry job will clean up`, e));
       }
       throw error; // BullMQ ghi failedReason, retry nếu còn lượt
     }
+  }
+
+  private async attemptToConfirm(orderId: string) {
+    const status = await this.ordersService.getStatus(orderId);
+    if (status === null) throw new UnrecoverableError(`Order ${orderId} not found`);
+    if (status !== OrderStatus.PENDING) return { skipped: true, reason: `Order is ${status}` };
+
+    await this.sleeper.sleep(this.randomDelay());   // JOB_PROCESSING_MIN_MS..MAX_MS
+    this.failureSimulator.maybeFail();              // throw với xác suất JOB_FAILURE_RATE
+    const confirmed = await this.ordersService.confirmOrder(orderId);
+    return confirmed ? { result: 'CONFIRMED' } : { skipped: true, reason: 'Order no longer PENDING' };
   }
 
   private isFinalAttempt(job: Job): boolean {
@@ -395,7 +402,7 @@ Code thật (`src/queue/order-processing.processor.ts`, `src/orders/orders.servi
 - **Concurrency:** option của `@Processor` được cố định lúc định nghĩa class, trước khi config được nạp, nên không đọc được `WORKER_CONCURRENCY`. Processor đặt `this.worker.concurrency = WORKER_CONCURRENCY` trong `onModuleInit`. Hook này chạy sau khi `@nestjs/bullmq` tạo `Worker` (module của BullMQ nằm sâu hơn nên được init trước), và BullMQ đọc lại giá trị này trước mỗi lần lấy job.
 - **Đóng Worker:** processor gọi `await this.worker.close()` trong `onModuleDestroy` (chờ job đang chạy xong). Nest gọi hook tắt máy theo thứ tự từ module gốc vào trong, nên nếu để `@nestjs/bullmq` tự đóng `Worker` ở `onApplicationShutdown`, DataSource của TypeORM (module nông hơn) đã bị đóng trước, và job đang chạy sẽ lỗi khi ghi DB.
 - **Thời gian xử lý:** số nguyên ngẫu nhiên trong `[JOB_PROCESSING_MIN_MS, JOB_PROCESSING_MAX_MS]`, lấy từ `RANDOM_SOURCE` (`Math.random` trong worker). `FailureSimulator.maybeFail()` ném `SimulatedFailureError('Simulated random processing failure')` khi `random() < JOB_FAILURE_RATE`.
-- **Log:** mỗi dòng có `orderId`, `attempt n/N` và `jobId`, ví dụ `Processing order <id> (attempt 2/4, job order-<id>)`, `Order <id> confirmed (…)`, `Order <id> failed (…): <lỗi>`, `Order <id> skipped (…): it is CONFIRMED`.
+- **Log:** mỗi dòng có `orderId`, `attempt n/N` và `jobId`, ví dụ `Processing order <id> (attempt 2/4, job order-<id>)`, `Order <id> confirmed (…)`, `Order <id> failed (…), BullMQ will retry it: <lỗi>`, `Order <id> failed on its last attempt (…): <lỗi>`, `Order <id> failed without retry (…): Order <id> not found`, `Order <id> skipped (…): it is CONFIRMED`.
 - **Kết quả trả về** (lưu ở `returnvalue` của job): `{ result: 'CONFIRMED' }`, `{ skipped: true, reason: 'Order is CANCELLED' }` hoặc `{ skipped: true, reason: 'Order is no longer PENDING' }` (CAS thua sau khi đã sleep).
 - Listener `@OnWorkerEvent('error')` ghi lỗi Redis của `Worker` bằng `createRedisErrorLogger` ([02 §7](02-architecture.md#7-cấu-hình-biến-môi-trường)).
 
@@ -403,7 +410,8 @@ Code thật (`src/queue/order-processing.processor.ts`, `src/orders/orders.servi
 
 - **Bù trừ ngay trong processor ở lần thử cuối**, không dùng event `failed` của worker ([ADR-017](10-technical-decisions.md#adr-017-bù-trừ-ở-lần-thử-cuối)). Lý do: handler của event không được BullMQ `await` và chạy sau khi job đã bị đánh dấu `failed`. Nếu tiến trình chết đúng lúc đó, bước bù trừ bị mất mà không để lại dấu vết. Bù trừ trong processor gắn chặt với lần thử, và vẫn có job hết hạn làm lưới an toàn.
 - **Lỗi giả lập đặt trước transaction xác nhận.** Nếu lỗi xảy ra *sau* commit (ví dụ crash trước khi BullMQ ghi nhận `completed`), lần retry sẽ thấy `CONFIRMED` và bỏ qua. Trường hợp này vẫn an toàn.
-- **`UnrecoverableError`** khi không tìm thấy đơn, vì retry cũng vô ích.
+- **Mọi bước của lần thử nằm trong cùng một `try`**, kể cả `getStatus`. Code thật tách thành `processOrder` (quyết định khi lỗi) và `attemptToConfirm` (một lần thử). Nhờ vậy lỗi DB khi đọc trạng thái ở lần cuối (ví dụ `Connection terminated unexpectedly`) cũng gọi `failOrder`, đúng [ADR-017](10-technical-decisions.md#adr-017-bù-trừ-ở-lần-thử-cuối) và FR-Q04, thay vì để job `failed` mà đơn vẫn `PENDING` giữ kho tới khi job hết hạn chạy. `failOrder` có CAS nên gọi khi đơn không còn `PENDING` cũng không đổi gì.
+- **`UnrecoverableError`** khi không tìm thấy đơn, vì retry cũng vô ích. Lỗi này được ném lại ngay, không qua `failOrder` (không có đơn để bù trừ), kể cả ở lần cuối.
 - `FailureSimulator` và `sleeper` là provider inject được, để unit test ép được kết quả thành công/lỗi.
 - **Ngữ nghĩa `attemptsMade` đã được kiểm chứng với BullMQ 6.3:** trong mã nguồn, `attemptsMade` chỉ tăng sau khi một lần chạy kết thúc (`Job.moveToFailed`/`moveToCompleted`), và BullMQ retry khi `attemptsMade + 1 < opts.attempts`. `isFinalAttempt` (hàm export của processor) là điều kiện ngược lại, nên khớp đúng với quyết định của BullMQ. Chạy MT-04 (`JOB_FAILURE_RATE=1`): log ghi `attempt 1/4` … `attempt 4/4`, đơn `FAILED` ở lần chạy thứ 4, hash của job trong Redis có `atm = 4`.
 - `failOrder` cắt `failure_reason` còn tối đa 1000 ký tự (`MAX_FAILURE_REASON_LENGTH`; cột là `text` nên không có giới hạn từ DB). Nếu `failOrder` lỗi, processor ghi log `ERROR` rồi vẫn ném lỗi gốc của lần thử, để `failedReason` của job là lỗi xử lý chứ không phải lỗi bù trừ.
@@ -582,7 +590,7 @@ Code thật: `OrdersService.getOrderJobs` trả `{ orderId, orderStatus, event, 
 | Worker không chạy | Sự kiện chưa được đẩy, đơn nằm ở `PENDING` | Khi worker chạy lại, relay đẩy job. Đơn quá hạn bị hủy, job của nó bỏ qua |
 | Relay crash giữa lô | Transaction rollback, sự kiện vẫn chưa publish | Lần quét sau đẩy lại. Có đẩy trùng cũng chỉ là no-op nhờ L1 |
 | Worker crash giữa chừng khi xử lý job | Job bị đánh dấu stalled và chạy lại | Các guard idempotent (§6) |
-| DB lỗi khi xử lý job | Lần thử lỗi, rồi retry | Nếu lần cuối `failOrder` cũng lỗi, đơn vẫn `PENDING` và job hết hạn xử lý |
+| DB lỗi khi xử lý job | Lần thử lỗi, rồi retry | Ở lần cuối, `failOrder` được gọi dù lỗi xảy ra ở bước nào (đọc trạng thái hay xác nhận). Nếu `failOrder` cũng lỗi, đơn vẫn `PENDING` và job hết hạn xử lý |
 | Mất dữ liệu Redis | Mất job và lịch sử job | DB vẫn đúng. Đơn `PENDING` bị hủy khi hết hạn. Scheduler được upsert lại khi worker khởi động |
 | Redis tự xóa key (eviction) | Job biến mất không báo lỗi | Bắt buộc `maxmemory-policy noeviction` ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) |
 | Deploy hoặc restart worker | SIGTERM | `enableShutdownHooks()`: dừng relay, `worker.close()` chờ job đang chạy xong rồi mới thoát. Nếu sau 10s vẫn chưa xong (ví dụ Redis đang tắt: lệnh `QUIT` của ioredis phải chờ sau các lệnh còn nằm trong offline queue), `exitIfShutdownHangs` (`src/bootstrap/shutdown-watchdog.ts`) ghi log lỗi và `exit(1)` |
