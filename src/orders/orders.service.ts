@@ -3,6 +3,7 @@ import type { ConfigType } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 import { paginate, Paginated } from '../common/dto/paginated-response.dto';
 import { getPaginationOffset } from '../common/dto/pagination-query.dto';
+import { truncate } from '../common/utils/truncate';
 import {
   AppException,
   InsufficientStockDetail,
@@ -26,6 +27,9 @@ import { NewOrderItem, OrdersRepository } from './orders.repository';
 
 /** Statuses a customer can cancel from (FR-O05). FAILED and CANCELLED are final. */
 const CANCELLABLE_STATUSES = [OrderStatus.PENDING, OrderStatus.CONFIRMED];
+
+/** Longest failure reason kept in orders.failure_reason (a text column). */
+export const MAX_FAILURE_REASON_LENGTH = 1000;
 
 @Injectable()
 export class OrdersService {
@@ -193,6 +197,36 @@ export class OrdersService {
   }
 
   /**
+   * Marks an order FAILED after the last attempt of its job failed, and gives
+   * its stock back, in one transaction (docs/05 §5, FR-Q04):
+   *
+   * - CAS PENDING -> FAILED (failed_at = now(), failure_reason = the error,
+   *   cut to MAX_FAILURE_REASON_LENGTH characters).
+   * - Only if the CAS matched: release the stock.
+   *
+   * Returns false when the order is no longer PENDING (e.g. the customer
+   * cancelled it meanwhile, which already gave the stock back): the stock is
+   * then left alone, so it is never released twice (docs/05 §6.2 #6, #8).
+   */
+  failOrder(orderId: string, reason: string): Promise<boolean> {
+    return this.dataSource.transaction(async (manager) => {
+      const order = await this.ordersRepo.transitionStatus(
+        manager,
+        orderId,
+        [OrderStatus.PENDING],
+        OrderStatus.FAILED,
+        { failureReason: truncate(reason, MAX_FAILURE_REASON_LENGTH) },
+      );
+      if (!order) {
+        return false;
+      }
+
+      await this.releaseStock(manager, orderId);
+      return true;
+    });
+  }
+
+  /**
    * Gives back the stock of every item of an order: one UPDATE per item, by
    * ascending product id, the order in which products are always locked
    * (docs/05 §2.2, docs/06 §5). A single UPDATE ... FROM order_items would
@@ -201,8 +235,8 @@ export class OrdersService {
    *
    * Only call it in the transaction of a successful CAS into a final status
    * (ADR-015): an order leaves PENDING/CONFIRMED once, so its stock is given
-   * back at most once. Used by cancel, and by the worker's paths (failed
-   * last attempt, expired order) through this service.
+   * back at most once. Used by cancel and failOrder, and by the worker's
+   * expiry job through this service.
    */
   private async releaseStock(
     manager: EntityManager,

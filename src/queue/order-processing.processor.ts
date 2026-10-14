@@ -30,6 +30,21 @@ export type ProcessOrderResult =
   { result: 'CONFIRMED' } | { skipped: true; reason: string };
 
 /**
+ * Whether the attempt in progress is the last one of its job (ADR-017).
+ *
+ * While a job runs, `attemptsMade` counts the attempts that already ended:
+ * BullMQ increments it after an attempt fails or completes (moveToFailed,
+ * moveToCompleted), so it is 0 during the first attempt. BullMQ retries when
+ * `attemptsMade + 1 < attempts`; this is the opposite condition. With
+ * attempts = 4, the 4th run (attemptsMade = 3) is the last.
+ */
+export function isFinalAttempt(
+  job: Pick<Job, 'attemptsMade' | 'opts'>,
+): boolean {
+  return job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+}
+
+/**
  * Consumes the order-processing queue (docs/05 §5). Provided by WorkerModule
  * only: `@nestjs/bullmq` starts a BullMQ Worker for every @Processor it
  * finds, which must never happen in the API (docs/02 §2).
@@ -113,6 +128,10 @@ export class OrderProcessingProcessor
    * 3. Confirm the order and record its notification in one transaction.
    *    The CAS inside makes this safe even when the status changed after
    *    step 1 (docs/05 §6).
+   *
+   * When an attempt fails and it was the last one, the order is marked
+   * FAILED and its stock released before the error goes back to BullMQ,
+   * which then moves the job to `failed` (ADR-017).
    */
   private async processOrder(
     job: Job<ProcessOrderJobData>,
@@ -144,11 +163,44 @@ export class OrderProcessingProcessor
       this.logger.log(`Order ${orderId} confirmed (${attempt})`);
       return { result: 'CONFIRMED' };
     } catch (error) {
+      if (!isFinalAttempt(job)) {
+        this.logger.warn(
+          `Order ${orderId} failed (${attempt}), BullMQ will retry it: ${errorMessage(error)}`,
+        );
+        throw error;
+      }
+
       this.logger.warn(
-        `Order ${orderId} failed (${attempt}): ${errorMessage(error)}`,
+        `Order ${orderId} failed on its last attempt (${attempt}): ${errorMessage(error)}`,
       );
-      // BullMQ records the error and schedules a retry if attempts remain.
+      await this.failOrder(orderId, error);
+      // BullMQ records the error as the job's failedReason and moves it to failed.
       throw error;
+    }
+  }
+
+  /**
+   * Marks the order FAILED and releases its stock. An error here is logged
+   * and swallowed, so the job still fails with its own error. The order then
+   * stays PENDING and the expiry job cancels it later, releasing the stock
+   * (docs/05 §9).
+   */
+  private async failOrder(orderId: string, cause: unknown): Promise<void> {
+    try {
+      const failed = await this.ordersService.failOrder(
+        orderId,
+        errorMessage(cause),
+      );
+      this.logger.log(
+        failed
+          ? `Order ${orderId} marked FAILED, stock released`
+          : `Order ${orderId} not marked FAILED: it is no longer PENDING`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not mark order ${orderId} FAILED, the expiry job will cancel it: ${errorMessage(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
     }
   }
 

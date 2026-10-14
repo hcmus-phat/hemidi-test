@@ -62,7 +62,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Hệ quả:**
   - Trường hợp xấu nhất mất khoảng `4 × 5s + (2 + 4 + 8)s ≈ 34s` (chưa tính độ trễ của relay ≤ 1s).
   - Xác suất đơn `FAILED` với tỉ lệ lỗi 30%: `0.3⁴ ≈ 0.81%`.
-  - Lần thử cuối được nhận biết khi `job.attemptsMade + 1 >= 4`. Kiểm chứng bằng MT-04: với `JOB_FAILURE_RATE=1`, đơn phải `FAILED` sau đúng 4 lần chạy.
+  - Lần thử cuối được nhận biết khi `job.attemptsMade + 1 >= 4`. Đã kiểm chứng bằng MT-04: với `JOB_FAILURE_RATE=1`, đơn `FAILED` sau đúng 4 lần chạy, khoảng cách giữa các lần khoảng 2s, 4s, 8s ([05 §5](05-order-processing.md#5-xử-lý-job-process-order)).
   - README phải nêu rõ cách hiểu này, vì người chấm có thể hiểu theo phương án 1. Giá trị cấu hình được qua env.
 - **Tham chiếu:** [01 A-01](01-requirements.md#6-giả-định-và-cách-hiểu-đề), [05 §4](05-order-processing.md#4-retry--backoff)
 

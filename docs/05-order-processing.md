@@ -405,7 +405,8 @@ Code thật (`src/queue/order-processing.processor.ts`, `src/orders/orders.servi
 - **Lỗi giả lập đặt trước transaction xác nhận.** Nếu lỗi xảy ra *sau* commit (ví dụ crash trước khi BullMQ ghi nhận `completed`), lần retry sẽ thấy `CONFIRMED` và bỏ qua. Trường hợp này vẫn an toàn.
 - **`UnrecoverableError`** khi không tìm thấy đơn, vì retry cũng vô ích.
 - `FailureSimulator` và `sleeper` là provider inject được, để unit test ép được kết quả thành công/lỗi.
-- Cần kiểm chứng ngữ nghĩa `attemptsMade` với phiên bản BullMQ đang dùng bằng MT-04 (`JOB_FAILURE_RATE=1` thì đơn phải `FAILED` ở đúng lần chạy thứ 4).
+- **Ngữ nghĩa `attemptsMade` đã được kiểm chứng với BullMQ 6.3:** trong mã nguồn, `attemptsMade` chỉ tăng sau khi một lần chạy kết thúc (`Job.moveToFailed`/`moveToCompleted`), và BullMQ retry khi `attemptsMade + 1 < opts.attempts`. `isFinalAttempt` (hàm export của processor) là điều kiện ngược lại, nên khớp đúng với quyết định của BullMQ. Chạy MT-04 (`JOB_FAILURE_RATE=1`): log ghi `attempt 1/4` … `attempt 4/4`, đơn `FAILED` ở lần chạy thứ 4, hash của job trong Redis có `atm = 4`.
+- `failOrder` cắt `failure_reason` còn tối đa 1000 ký tự (`MAX_FAILURE_REASON_LENGTH`; cột là `text` nên không có giới hạn từ DB). Nếu `failOrder` lỗi, processor ghi log `ERROR` rồi vẫn ném lỗi gốc của lần thử, để `failedReason` của job là lỗi xử lý chứ không phải lỗi bù trừ.
 
 ## 6. Idempotency
 
