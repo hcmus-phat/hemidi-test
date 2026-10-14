@@ -43,15 +43,15 @@ flowchart LR
 
 | Hạng mục | Lựa chọn | Ghi chú |
 |---|---|---|
-| Runtime | Node.js 22 LTS | TypeORM 1.x yêu cầu `^20.19 \|\| ^22.13 \|\| >=24.11` |
+| Runtime | Node.js 22 LTS (≥ 22.13) | TypeORM 1.x yêu cầu `^20.19 \|\| ^22.13 \|\| >=24.11`. NestJS 12 chỉ phát hành dạng ES module, còn dự án biên dịch ra CommonJS và dựa vào `require(esm)` có sẵn từ Node 22.12 ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
 | Framework | NestJS 12 | `@nestjs/config`, `@nestjs/typeorm`, `@nestjs/bullmq`, `@nestjs/swagger` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
 | ORM | TypeORM 1.x | `synchronize: false`, migration bằng TypeORM CLI |
 | DB | PostgreSQL 16 (local), Neon (production) | `gen_random_uuid()` có sẵn từ PG13 |
 | Queue | BullMQ 6.x | Job scheduler dùng `upsertJobScheduler` |
 | Redis | Redis 7 (local), Redis Cloud (production) | Bắt buộc `maxmemory-policy noeviction` ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) |
 | Validate | class-validator, class-transformer | `ValidationPipe` toàn cục |
-| Test | Jest (`@nestjs/testing`) | Unit test có mock. Integration test dùng Postgres/Redis của docker-compose |
-| Lint/format | ESLint, Prettier | |
+| Test | Jest (`@nestjs/testing`), ts-jest | Unit test có mock. Integration test dùng Postgres/Redis của docker-compose. Jest trên Node 22 không `require()` được ES module, nên các gói `@nestjs/*` được chuyển sang CommonJS khi test bằng `test/esm-to-cjs.transformer.js` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
+| Lint/format | ESLint (flat config, typescript-eslint type-checked), Prettier | Kết thúc dòng LF (`.gitattributes`) |
 
 ## 4. Cấu trúc thư mục
 

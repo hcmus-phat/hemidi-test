@@ -11,7 +11,7 @@
 
 ### 2.1 Yêu cầu
 
-Node.js LTS (≥ 20), npm, Docker Desktop.
+Node.js 22 LTS (≥ 22.13), npm, Docker Desktop.
 
 ### 2.2 `docker-compose.yml`
 
