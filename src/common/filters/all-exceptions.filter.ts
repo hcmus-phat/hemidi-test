@@ -173,10 +173,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
           : this.conflict();
       case PgErrorCode.FOREIGN_KEY_VIOLATION:
         return this.conflict();
-      // A value Postgres cannot read (22P02, e.g. a malformed uuid) or store
-      // (22021, e.g. a NUL character, which text columns do not accept).
+      // A value Postgres cannot read (22P02, e.g. a malformed uuid) or store:
+      // 22021, e.g. a NUL character, which text columns do not accept;
+      // 22001, a string too long for its varchar(n). The DTO length rules use
+      // validator.js, which does not count variation selectors: 255 red hearts
+      // (U+2764 U+FE0F) pass @Length(1, 255) but are 510 characters in Postgres.
       case PgErrorCode.INVALID_TEXT_REPRESENTATION:
       case PgErrorCode.CHARACTER_NOT_IN_REPERTOIRE:
+      case PgErrorCode.STRING_DATA_RIGHT_TRUNCATION:
         return new AppException(
           ErrorCode.VALIDATION_ERROR,
           'Invalid input value',

@@ -201,6 +201,7 @@ describe('AllExceptionsFilter', () => {
       ['23514', 'chk_orders_total_non_negative', 409, ErrorCode.CONFLICT],
       ['22P02', undefined, 400, ErrorCode.VALIDATION_ERROR],
       ['22021', undefined, 400, ErrorCode.VALIDATION_ERROR],
+      ['22001', undefined, 400, ErrorCode.VALIDATION_ERROR],
       ['55P03', undefined, 503, ErrorCode.SERVICE_UNAVAILABLE],
       ['40P01', undefined, 503, ErrorCode.SERVICE_UNAVAILABLE],
       ['42P01', undefined, 500, ErrorCode.INTERNAL_ERROR],
