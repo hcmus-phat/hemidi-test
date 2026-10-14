@@ -244,7 +244,7 @@ Body `UpdateProductDto = PartialType(CreateProductDto)`: mọi field đều tùy
 |---|---|---|---|
 | `customerName` | string | ✓ | Trim, dài 1–255 |
 | `customerEmail` | string | ✓ | Trim và chuyển về chữ thường trước khi kiểm tra. `@IsEmail()`, tối đa 255 ký tự |
-| `items` | array | ✓ | 1–50 phần tử, `@ValidateNested({ each: true })`, `@Type(() => OrderItemDto)`, `@ArrayUnique(i => i.productId)`. `productId` lặp lại (kể cả khác hoa thường) trả lỗi trên field `items`: `items must not contain the same productId more than once` |
+| `items` | array | ✓ | 1–50 phần tử, `@ValidateNested({ each: true })`, `@Type(() => OrderItemDto)`, `@ArrayUnique(i => i.productId)`. Mỗi phần tử phải là object (`@IsObject({ each: true })`, chỉ chạy khi `items` là mảng): `@ValidateNested` chấp nhận cả mảng lồng, nên thiếu rule này thì `[[]]` lọt tới service và trả 404 thay vì 400. `productId` lặp lại (kể cả khác hoa thường) trả lỗi trên field `items`: `items must not contain the same productId more than once` |
 | `items[].productId` | string | ✓ | `@IsUUID('4')` (giống `:id` trên URL), trim và chuyển về chữ thường (`@Transform`) trước khi kiểm tra trùng và tra cứu |
 | `items[].quantity` | integer | ✓ | `@IsInt()`, 1–1000 |
 

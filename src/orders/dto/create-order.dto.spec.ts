@@ -114,6 +114,36 @@ describe('CreateOrderDto', () => {
       expect(messagesOf(result, 'items')).toContain(message);
     });
 
+    // Without @IsObject, an array inside `items` passed validation, and the
+    // service answered 404 "Product undefined not found".
+    it.each([
+      ['an empty array', [[]]],
+      ['an array holding a valid item', [[{ productId: P1, quantity: 1 }]]],
+      ['null', [null]],
+      ['a string', [P1]],
+    ])('rejects an item that is %s', async (_case, items) => {
+      const result = await validate({ ...valid, items });
+
+      expect(invalidFields(result)).toContain('items');
+      expect(messagesOf(result, 'items')).toEqual([
+        'each value in items must be an object',
+      ]);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['null', null],
+      ['a string', 'P1'],
+      ['an object', { productId: P1, quantity: 1 }],
+    ])('does not check each item when items is %s', async (_case, items) => {
+      const result = await validate({ ...valid, items });
+
+      expect(messagesOf(result, 'items')).toContain('items must be an array');
+      expect(messagesOf(result, 'items')).not.toContain(
+        'each value in items must be an object',
+      );
+    });
+
     it('accepts 50 items', async () => {
       const items = Array.from({ length: 50 }, (_, i) => ({
         productId: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,

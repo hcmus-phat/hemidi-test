@@ -7,6 +7,7 @@ import {
   IsArray,
   IsEmail,
   IsInt,
+  IsObject,
   IsString,
   IsUUID,
   Length,
@@ -53,6 +54,13 @@ export class OrderItemDto {
 const productIdKey = (item: Partial<OrderItemDto>): unknown =>
   item.productId ?? Symbol('missing productId');
 
+/**
+ * `validateIf` for the rules on each item: they only run on an array, so a
+ * missing or non-array `items` is reported by @IsArray rather than by
+ * messages about items that do not exist.
+ */
+const isArray = (_dto: object, items: unknown): boolean => Array.isArray(items);
+
 export class CreateOrderDto {
   @ApiProperty({
     description: 'Customer name (trimmed)',
@@ -90,6 +98,10 @@ export class CreateOrderDto {
   @ArrayUnique(productIdKey, {
     message: 'items must not contain the same productId more than once',
   })
+  // @ValidateNested accepts an array as an item and only validates what is
+  // inside it, so without this rule `items: [[]]` would pass and reach the
+  // service. isObject is false for arrays and null.
+  @IsObject({ each: true, validateIf: isArray })
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items: OrderItemDto[];
