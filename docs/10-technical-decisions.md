@@ -163,6 +163,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Quyết định:** Mọi lỗi trả `{ statusCode, error, message, details?, path, timestamp }`. `error` là mã máy đọc được (danh mục ở [04 §5](04-api-spec.md#5-danh-mục-mã-lỗi)). `message` viết bằng **tiếng Anh**.
 - **Lý do:** Thống nhất với thông điệp mặc định của class-validator, đúng thông lệ khi viết API.
 - **Hệ quả:** Lỗi `500 INTERNAL_ERROR` chỉ trả `Internal server error`, chi tiết ghi vào log. Lỗi `503 SERVICE_UNAVAILABLE` là lỗi tạm thời mà client nên thử lại (chờ khóa quá lâu, deadlock, Redis không kết nối được), nên trả một thông điệp ngắn, cố định do code đặt, ví dụ `The database is busy, please retry`. Thông điệp này không bao giờ chứa stack, SQL hay dữ liệu của request.
+- **Ngoại lệ:** `503` của `GET /health` giữ body của health check (`{ status: "error", checks: { database, redis } }`) thay vì định dạng lỗi chung, vì công cụ giám sát cần biết thành phần nào đang down ([04 §4.7](04-api-spec.md#47-get-health-should-xem-adr-028)). Đây không phải lỗi của request mà là trạng thái của hệ thống.
 
 ---
 
@@ -291,6 +292,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-011: ghi nhận ngoại lệ của `GET /health`: `503` giữ body `{ status, checks }` thay vì định dạng lỗi chung |
 | 2026-10-15 | ADR-003: relay lấy `orderId` từ `aggregate_id` thay vì `payload.orderId`. Payload `jsonb` không được DB kiểm tra, một sự kiện có payload sai sẽ bị lấy lại ở đầu mọi lô và có thể chặn các sự kiện phía sau |
 | 2026-10-15 | ADR-029: ghi nhận BullMQ 6 cần cài `ioredis` riêng (chọn 5.x vì peer của TypeORM 1.1), connection options riêng cho API và worker, ngữ nghĩa `attemptsMade` và công thức backoff đã kiểm tra trong mã nguồn BullMQ |
 | 2026-10-15 | ADR-014: ghi nhận cách đặt `lock_timeout` trong code: `SELECT set_config('lock_timeout', $1, true)`, dạng có tham số của `SET LOCAL` |

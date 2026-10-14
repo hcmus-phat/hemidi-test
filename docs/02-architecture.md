@@ -146,7 +146,10 @@ flowchart LR
 │   │   ├── requeue-order.ts               # npm run job:requeue -- <orderId>: xóa rồi đẩy lại job order-<id> (MT-08)
 │   │   └── race-last-item.ts              # npm run race:last-item -- [baseUrl] [N]: N đơn đồng thời cho món cuối (06 §9), chỉ dùng HTTP
 │   └── health/
-│       └── health.controller.ts           # GET /health
+│       ├── health.module.ts               # Import QueueModule để dùng kết nối Redis của queue
+│       ├── health.controller.ts           # GET /health: 200 hoặc 503, body { status, checks } (04 §4.7)
+│       ├── health.service.ts              # SELECT 1 và PING song song, mỗi check timeout 2s
+│       └── dto/health-response.dto.ts
 ├── test/
 │   ├── esm-to-cjs.transformer.js          # Jest: chuyển các gói @nestjs/* (ES module) sang CommonJS
 │   ├── jest-e2e.config.js                 # Cấu hình e2e (npm run test:e2e), dùng lại transform của jest.config.js
@@ -169,6 +172,7 @@ flowchart TD
   AppModule --> ProductsModule
   AppModule --> OrdersModule
   AppModule --> HealthModule
+  HealthModule --> QueueModule
   AppModule --> QueueRootApi["QueueModule.forRoot(Api)<br/>enableOfflineQueue: false"]
 
   WorkerModule --> ConfigModule

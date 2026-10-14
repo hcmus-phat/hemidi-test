@@ -35,7 +35,7 @@
 
 ## 2. Định dạng lỗi thống nhất
 
-Mọi lỗi (validate, nghiệp vụ, DB, không xác định) đều trả về cùng một cấu trúc:
+Mọi lỗi (validate, nghiệp vụ, DB, không xác định) đều trả về cùng một cấu trúc. Ngoại lệ duy nhất là `503` của `GET /health`, giữ body của health check (§4.7):
 
 ```json
 {
@@ -378,7 +378,21 @@ Không có body. Chuyển `PENDING | CONFIRMED → CANCELLED` (`cancelReason = C
 { "status": "ok", "checks": { "database": "up", "redis": "up" } }
 ```
 
-Trả `503` cùng `status: "error"` nếu một trong hai bị down.
+Trả `503` cùng `status: "error"` nếu một trong hai bị down. Body của `503` **giữ đúng hình dạng trên**, không phải định dạng lỗi thống nhất của §2, để công cụ giám sát thấy thành phần nào đang down:
+
+```json
+{ "status": "error", "checks": { "database": "up", "redis": "down" } }
+```
+
+| Check | Cách kiểm tra | `down` khi |
+|---|---|---|
+| `database` | `SELECT 1` qua pool của TypeORM | Câu lệnh lỗi hoặc không trả lời trong 2000 ms (`HEALTH_CHECK_TIMEOUT_MS`) |
+| `redis` | `PING` qua kết nối Redis của queue `order-processing` (cùng kết nối mà `GET /orders/:id/jobs` dùng, `enableOfflineQueue: false`) | Lệnh lỗi hoặc không trả lời trong 2000 ms, kể cả khi API khởi động lúc Redis đang tắt (BullMQ chờ kết nối đầu tiên) |
+
+- Hai check chạy song song, nên endpoint trả lời trong tối đa khoảng 2s, không bao giờ treo.
+- `status = "ok"` khi và chỉ khi cả hai đều `up`. HTTP `200` hoặc `503`. Không có field nào khác.
+- Lý do lỗi chỉ được ghi log `WARN` (`Health check: redis is down: …`), không trả ra response.
+- Code: `src/health/` (`HealthService`, `HealthController`). Controller không ném exception mà đặt status `503` rồi trả body (`@Res({ passthrough: true })`), nên `AllExceptionsFilter` không đổi body này.
 
 ---
 
@@ -394,7 +408,7 @@ Trả `503` cùng `status: "error"` nếu một trong hai bị down.
 | 409 | `INSUFFICIENT_STOCK` | Không đủ tồn kho | Service. Postgres `23514` trên `chk_products_stock_non_negative` (lớp chặn cuối) |
 | 409 | `INVALID_ORDER_STATUS` | Hủy đơn ở trạng thái không cho phép | Service |
 | 409 | `CONFLICT` | Vi phạm ràng buộc khác (`23505`, `23503`, `23514`) chưa có mã riêng | Filter |
-| 503 | `SERVICE_UNAVAILABLE` | Hết thời gian chờ khóa (`55P03`), deadlock (`40P01`), Redis không kết nối được (chỉ ở `GET /orders/:id/jobs` và `/health`) | Filter |
+| 503 | `SERVICE_UNAVAILABLE` | Hết thời gian chờ khóa (`55P03`), deadlock (`40P01`), Redis không kết nối được (chỉ ở `GET /orders/:id/jobs`). `GET /health` cũng trả `503` nhưng với body riêng (§4.7) | Filter |
 | 4xx khác | Tên HTTP status, ví dụ `PAYLOAD_TOO_LARGE` | Lỗi do Nest/Express sinh ra mà không có mã riêng, ví dụ body lớn hơn 100 KB (413) | Filter (`HttpException`, lỗi `http-errors` của body-parser) |
 | 500 | `INTERNAL_ERROR` | Lỗi không mong đợi | Filter |
 

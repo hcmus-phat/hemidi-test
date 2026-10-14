@@ -6,6 +6,8 @@ import type {
   SchemaObject,
 } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
+import { HealthController } from '../health/health.controller';
+import { HealthService } from '../health/health.service';
 import { OrdersController } from '../orders/orders.controller';
 import { OrdersService } from '../orders/orders.service';
 import { ProductsController } from '../products/products.controller';
@@ -22,10 +24,11 @@ describe('createSwaggerDocument', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      controllers: [ProductsController, OrdersController],
+      controllers: [ProductsController, OrdersController, HealthController],
       providers: [
         { provide: ProductsService, useValue: {} },
         { provide: OrdersService, useValue: {} },
+        { provide: HealthService, useValue: {} },
       ],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -53,6 +56,35 @@ describe('createSwaggerDocument', () => {
     );
     return parameter?.schema ?? {};
   }
+
+  it('documents GET /health with the same body for 200 and 503', () => {
+    const responses = document.paths['/health'].get?.responses ?? {};
+    const healthSchema = {
+      $ref: '#/components/schemas/HealthResponseDto',
+    };
+
+    expect(Object.keys(responses)).toEqual(['200', '503']);
+    expect(responses['200']).toMatchObject({
+      content: { 'application/json': { schema: healthSchema } },
+    });
+    expect(responses['503']).toMatchObject({
+      content: {
+        'application/json': {
+          schema: healthSchema,
+          example: {
+            status: 'error',
+            checks: { database: 'up', redis: 'down' },
+          },
+        },
+      },
+    });
+    expect(document.components?.schemas?.CheckStatus).toMatchObject({
+      enum: ['up', 'down'],
+    });
+    expect(document.components?.schemas?.HealthStatus).toMatchObject({
+      enum: ['ok', 'error'],
+    });
+  });
 
   it('lists every order endpoint', () => {
     expect(Object.keys(document.paths['/orders'])).toEqual(

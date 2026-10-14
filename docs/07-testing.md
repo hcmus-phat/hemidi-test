@@ -176,6 +176,7 @@ Code thật:
 | `src/queue/order-processing.processor.spec.ts` | UT-07 (với `CONFIRMED`, `CANCELLED`, `FAILED`), UT-08, UT-09. Thêm: thời gian xử lý nằm trong `[MIN, MAX]`, CAS thua sau khi sleep thì `skipped`, đơn không tồn tại thì `UnrecoverableError` (không sleep, không `failOrder`, kể cả ở lần cuối), tên job lạ thì `UnrecoverableError`, lỗi DB ở lần cuối cũng gọi `failOrder` (khi xác nhận và khi đọc trạng thái; lỗi đọc trạng thái trước lần cuối chỉ được ném lại), `failOrder` lỗi thì vẫn ném lỗi gốc, 4 lần thử chỉ bù trừ 1 lần, `concurrency` lấy từ config, `worker.close()` khi module bị hủy, bảng `isFinalAttempt` |
 | `src/outbox/outbox-relay.service.spec.ts` | UT-11, UT-12. Thêm: id đơn lấy từ `aggregateId` nên sự kiện có payload sai (thiếu `orderId`, `orderId` không phải UUID, payload `null`) vẫn được đẩy và không bị `markFailed`, chu kỳ quét (Jest fake timers): quét ngay khi khởi động rồi mỗi `OUTBOX_POLL_INTERVAL_MS`, giãn 2s → 4s → 5s (trần) khi lỗi và quay về chu kỳ thường sau khi thành công, lô đầy thì quét lại sau 1ms (`setTimeout(0)` gọi từ một timer chạy sau 1ms), dừng thì không quét nữa, `onModuleDestroy` chờ lô đang chạy |
 | `src/queue/order-jobs.scheduler.spec.ts` | `upsertJobScheduler('expire-pending-orders', { every }, …)` đúng tham số, không chặn khởi động khi Redis không trả lời, lỗi chỉ ghi log |
+| `src/health/health.service.spec.ts` | `HealthService`: cả hai `up` thì `ok`, DB lỗi hoặc Redis lỗi thì `error` với check tương ứng `down` (lý do chỉ ghi log), không trả lời quá 2s thì `down` (Jest fake timers), hai check chạy song song. `HealthController`: `503` khi `error`, giữ status mặc định `200` khi `ok` |
 | `src/queue/order-queue.producer.spec.ts`, `redis-connection.spec.ts`, `failure-simulator.spec.ts` | Option của job (`jobId`, `attempts`, `backoff`, `removeOn*`), timeout Redis, parse `REDIS_URL`, option kết nối theo vai trò, xác suất lỗi giả lập |
 
 Các processor và relay được tạo trực tiếp bằng `new` với các dependency giả. `Logger` của Nest được `jest.spyOn(...).mockImplementation()` để output test gọn.
@@ -196,6 +197,7 @@ Hiện thực (`npm run test:e2e` = `jest --config test/jest-e2e.config.js --run
 | `test/e2e/relay-testing-module.ts` | Phía worker của outbox, không có vòng lặp nền: `OutboxRelayService`, queue và producer, kết nối Redis như worker nhưng với prefix `mini-oms-e2e`. Module chỉ `compile()` (không `init()`), nên hook `onApplicationBootstrap` không chạy và vòng quét của relay không khởi động. Không có processor nên không có BullMQ `Worker` |
 | `test/concurrency.e2e-spec.ts` | IT-01, IT-01b, IT-02, IT-02b, IT-03 (chỉ cần Postgres) |
 | `test/outbox-relay.e2e-spec.ts` | IT-04, IT-05 (Postgres và Redis) |
+| `test/health.e2e-spec.ts` | `GET /health`: `200` với Postgres và Redis thật. `503` với body `{ status: "error", checks: { database: "down", redis: "up" } }` khi câu `SELECT 1` lỗi (`jest.spyOn` trên `DataSource.query`) |
 
 Mỗi file đóng app, `DataSource` và kết nối Redis trong `afterAll`, nên Jest tự thoát mà không cần `--forceExit`.
 

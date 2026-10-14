@@ -29,6 +29,7 @@ export function createSwaggerDocument(app: INestApplication): OpenAPIObject {
     .setVersion('1.0')
     .addTag('products', 'Product catalog and stock')
     .addTag('orders', 'Placing, reading and cancelling orders')
+    .addTag('health', 'Database and Redis checks')
     .build();
   return SwaggerModule.createDocument(app, config);
 }
