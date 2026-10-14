@@ -1,5 +1,10 @@
 import { INestApplication } from '@nestjs/common';
-import type { OpenAPIObject } from '@nestjs/swagger';
+import type {
+  OpenAPIObject,
+  ParameterObject,
+  ReferenceObject,
+  SchemaObject,
+} from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
 import { OrdersController } from '../orders/orders.controller';
 import { OrdersService } from '../orders/orders.service';
@@ -36,15 +41,17 @@ describe('createSwaggerDocument', () => {
     return document.components?.schemas?.[name] as Schema;
   }
 
+  /** Schema of a query param of `GET path`, or `{}` if there is no such param. */
   function queryParam(
     name: string,
     path = '/products',
-  ): Record<string, unknown> {
-    const parameters = (document.paths[path].get?.parameters ?? []) as {
-      name: string;
-      schema: Record<string, unknown>;
-    }[];
-    return parameters.find((p) => p.name === name)?.schema ?? {};
+  ): SchemaObject | ReferenceObject {
+    const parameters = document.paths[path].get?.parameters ?? [];
+    // A parameter can also be a $ref to a shared definition, which has no name.
+    const parameter = parameters.find(
+      (p): p is ParameterObject => 'name' in p && p.name === name,
+    );
+    return parameter?.schema ?? {};
   }
 
   it('lists every order endpoint', () => {
