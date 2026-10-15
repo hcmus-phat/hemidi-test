@@ -163,7 +163,7 @@ flowchart LR
 ├── .env.test                              # Env của test e2e: giá trị mặc định của docker-compose, không có secret
 ├── docker-compose.yml
 ├── .env.example
-├── vercel.json                       # installCommand (npm ci --include=dev), buildCommand, function api/index.js (includeFiles dist/**), rewrite mọi path về /api
+├── vercel.json                       # framework: null (preset Other), installCommand (npm ci --include=dev), buildCommand, function api/index.js (includeFiles dist/**), rewrite mọi path về /api
 └── README.md
 ```
 

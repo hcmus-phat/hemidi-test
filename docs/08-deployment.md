@@ -174,6 +174,7 @@ module.exports = require('../dist/vercel').default;
 // vercel.json
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
   "installCommand": "npm ci --include=dev",
   "buildCommand": "npm run build",
   "functions": {
@@ -185,6 +186,8 @@ module.exports = require('../dist/vercel').default;
 
 > **Vì sao trỏ vào `dist/` (đã build bằng `tsc`)?** NestJS cần `emitDecoratorMetadata` cho dependency injection. Các bundler dựa trên esbuild không phát sinh metadata này, nên DI sẽ hỏng khi chạy. Build bằng `nest build` (tsc) rồi để function `require` lại là cách an toàn nhất. `includeFiles: "dist/**"` đưa cả entity và migration vào function, vì TypeORM nạp chúng theo glob lúc chạy nên công cụ dò file của Vercel không tự thấy.
 > Vercel gần đây có hỗ trợ NestJS theo kiểu zero-config. Nếu muốn dùng, hãy đọc tài liệu Vercel hiện hành. Cách thủ công ở trên không phụ thuộc vào tính năng đó.
+
+> **Vì sao `"framework": null`?** `null` là preset **Other**, ghi đè preset trong Project Settings. Vercel tự nhận diện dự án có `@nestjs/core` là NestJS (backend framework) và dựng `src/main.ts` theo kiểu zero-config. Ở chế độ đó, rewrite nội bộ chuyển request theo **đường dẫn đích**: rewrite `/(.*)` → `/api` có thể làm app nhận `/api` cho mọi request, tức mọi route `404` (build in cảnh báo `Internal rewrites in backend framework projects now route requests using the rewritten destination path`). Với preset Other, function `api/index.js` nhận URL gốc như khi kiểm tra local.
 
 > **Vì sao `installCommand` có `--include=dev`?** `nest build` cần Nest CLI, TypeScript và các gói `@types/*`, đều là `devDependencies`. Khi `NODE_ENV=production` có mặt lúc cài (biến của project trên Vercel có mặt cả ở bước cài, theo bài KB "Dependencies from package.json are missing after install" của Vercel), npm mặc định `omit=dev` và bỏ qua chúng, nên build lỗi (`nest: not found`). `--include=dev` luôn cài `devDependencies`, bất kể `NODE_ENV`. Gói dev không làm function nặng thêm: Vercel chỉ đưa vào function các file mà `api/index.js` thực sự `require` (cùng `includeFiles`). Code của dự án không đọc `NODE_ENV`, nên cũng không cần khai báo biến này (§4.2).
 
@@ -200,7 +203,7 @@ module.exports = require('../dist/vercel').default;
 
 ### 4.2 Các bước
 
-1. Import GitHub repo vào Vercel, chọn Framework Preset là **Other**. Install Command, Build Command và cấu hình function lấy từ `vercel.json`. Phiên bản Node lấy từ `engines.node` (`^22.13`, tức 22.x), không cần chọn trong Project Settings.
+1. Import GitHub repo vào Vercel. Framework Preset là **Other**: `vercel.json` đặt `"framework": null` nên preset trong Project Settings bị ghi đè, kể cả khi Vercel tự chọn NestJS. Install Command, Build Command và cấu hình function lấy từ `vercel.json`. Phiên bản Node lấy từ `engines.node` (`^22.13`, tức 22.x), không cần chọn trong Project Settings.
 2. Khai báo Environment Variables: `DATABASE_URL` (**pooled** connection string của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://…`, chỉ để đọc trạng thái job), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Các biến `JOB_*` và `OUTBOX_*` chỉ cần ở worker. Không cần `NODE_ENV`: code không đọc biến này (§4.1).
 3. Chạy migration lên DB production **trước** khi deploy (§6).
 4. Deploy, rồi mở `https://<project>.vercel.app/api/docs` và `/health` (§7).
@@ -217,6 +220,7 @@ module.exports = require('../dist/vercel').default;
 | Function chạy Node 24 thay vì 22 | `engines.node` là `^22.13` (§4.1). Một khoảng mở như `>=22.13` sẽ được Vercel map sang 24.x |
 | Worker vô tình chạy trong function | `AppModule` không import `WorkerModule` hay bất kỳ `@Processor` nào |
 | Request treo khi Redis không truy cập được | `POST /orders` không dùng Redis (Outbox). `GET /orders/:id/jobs` dùng `enableOfflineQueue: false` để trả `503` ngay |
+| Build in cảnh báo `Internal rewrites in backend framework projects…` | Project đang chạy preset NestJS (zero-config) thay vì Other. Giữ `"framework": null` trong `vercel.json` (§4.1), hoặc chọn Framework Preset **Other** trong Project Settings, rồi redeploy không dùng build cache |
 | Vercel báo thiếu thư mục output (`public`) | Tạo thư mục `public/` rỗng (có `.gitkeep`) hoặc cấu hình `outputDirectory` |
 | Build lỗi `nest: not found` (hoặc thiếu `@types/*`) | `NODE_ENV=production` có mặt lúc cài nên npm bỏ `devDependencies`. `vercel.json` dùng `installCommand: npm ci --include=dev`; nếu Install Command bị ghi đè trong Project Settings, hãy giữ `--include=dev` (§4.1) |
 

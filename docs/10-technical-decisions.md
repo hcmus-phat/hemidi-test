@@ -294,6 +294,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-025: `vercel.json` đặt `"framework": null` (preset Other). Lần deploy đầu, Vercel tự nhận dự án là NestJS (backend framework) và build in cảnh báo rewrite nội bộ nay chuyển request theo đường dẫn đích; với rewrite `/(.*)` → `/api`, app có thể nhận `/api` cho mọi request |
 | 2026-10-15 | ADR-025: `vercel.json` có `installCommand: npm ci --include=dev`, build của Railway là `npm ci --include=dev && npm run build`, và `NODE_ENV=production` bị bỏ khỏi danh sách biến khi deploy. Biến này có mặt lúc cài thì npm bỏ `devDependencies` (Nest CLI, TypeScript), nên `nest build` lỗi. Code không đọc `NODE_ENV` (bỏ `appConfig.nodeEnv`/`isProduction` không dùng tới) |
 | 2026-10-15 | ADR-008: `:id` trên URL được chuẩn hóa thành chữ thường sau khi validate (`uuidParam()`), và `buildOrderJobId` cũng tự chuyển về chữ thường. Trước đó, id viết hoa vẫn tìm thấy đơn (Postgres) nhưng không thấy job (key Redis phân biệt hoa thường): `GET /orders/:id/jobs` trả `jobs: []`, còn `job:requeue` thêm một job thứ hai |
 | 2026-10-15 | ADR-025: ghi nhận cách chặn rò kết nối khi khởi động lỗi: Queue chỉ được tạo sau khi DataSource kết nối (`registerQueueAsync` inject `DataSource`), kết nối DB có giới hạn (`connectTimeoutMS` 5s, 3 lần thử cách nhau 2s, ≈ 19s khi DB không trả lời, trong `maxDuration` 30s), không `process.exit()` sau khi trả `503` |
