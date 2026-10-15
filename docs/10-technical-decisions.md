@@ -1,6 +1,6 @@
 # 10 — Nhật ký quyết định kỹ thuật (ADR)
 
-> Cập nhật: 2026-10-14 · Phạm vi: toàn bộ bộ tài liệu `docs/01`–`09`
+> Cập nhật: 2026-10-15 · Phạm vi: toàn bộ bộ tài liệu `docs/01`–`09`
 
 File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọn gì, vì sao chọn, đã cân nhắc những phương án nào và hệ quả ra sao. Khi một quyết định thay đổi, hãy cập nhật ADR tương ứng trước, rồi mới sửa các tài liệu chi tiết.
 
@@ -296,6 +296,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 |---|---|
 | 2026-10-15 | ADR-025: `vercel.json` có `installCommand: npm ci --include=dev`, build của Railway là `npm ci --include=dev && npm run build`, và `NODE_ENV=production` bị bỏ khỏi danh sách biến khi deploy. Biến này có mặt lúc cài thì npm bỏ `devDependencies` (Nest CLI, TypeScript), nên `nest build` lỗi. Code không đọc `NODE_ENV` (bỏ `appConfig.nodeEnv`/`isProduction` không dùng tới) |
 | 2026-10-15 | ADR-008: `:id` trên URL được chuẩn hóa thành chữ thường sau khi validate (`uuidParam()`), và `buildOrderJobId` cũng tự chuyển về chữ thường. Trước đó, id viết hoa vẫn tìm thấy đơn (Postgres) nhưng không thấy job (key Redis phân biệt hoa thường): `GET /orders/:id/jobs` trả `jobs: []`, còn `job:requeue` thêm một job thứ hai |
+| 2026-10-15 | ADR-025: ghi nhận cách chặn rò kết nối khi khởi động lỗi: Queue chỉ được tạo sau khi DataSource kết nối (`registerQueueAsync` inject `DataSource`), kết nối DB có giới hạn (`connectTimeoutMS` 5s, 3 lần thử cách nhau 2s, ≈ 19s khi DB không trả lời, trong `maxDuration` 30s), không `process.exit()` sau khi trả `503` |
 | 2026-10-15 | ADR-029: `engines.node` từ `>=22.13` thành `^22.13`, để Vercel chạy function trên Node 22.x thay vì 24.x. ADR-025: ghi nhận cách hiện thực handler (`getInstance()`, không cache lỗi khởi động) |
 | 2026-10-15 | ADR-011: ghi nhận ngoại lệ của `GET /health`: `503` giữ body `{ status, checks }` thay vì định dạng lỗi chung |
 | 2026-10-15 | ADR-003: relay lấy `orderId` từ `aggregate_id` thay vì `payload.orderId`. Payload `jsonb` không được DB kiểm tra, một sự kiện có payload sai sẽ bị lấy lại ở đầu mọi lô và có thể chặn các sự kiện phía sau |

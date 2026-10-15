@@ -310,6 +310,7 @@ Không có body. Chuyển `PENDING | CONFIRMED → CANCELLED` (`cancelReason = C
 | 400 `VALIDATION_ERROR` | `id` không phải UUID |
 | 404 `ORDER_NOT_FOUND` | Không tồn tại |
 | 409 `INVALID_ORDER_STATUS` | Đơn đang `FAILED` hoặc `CANCELLED`. `message`: `Order cannot be cancelled in status FAILED` |
+| 503 `SERVICE_UNAVAILABLE` | Chờ khóa quá `DB_LOCK_TIMEOUT_MS` (tải quá cao) |
 
 ### 4.6 `GET /orders/:id/jobs`
 

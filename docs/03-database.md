@@ -133,8 +133,8 @@ Bảng này thay cho việc gửi email thật. Mỗi dòng là một "thông b�
 | `type` | `varchar(32)` | ✗ | `ORDER_CONFIRMED` (bắt buộc). Có thể thêm `ORDER_FAILED`, `ORDER_CANCELLED` |
 | `channel` | `varchar(16)` | ✗ | Mặc định `'EMAIL'` |
 | `recipient` | `varchar(255)` | ✗ | Email khách |
-| `subject` | `varchar(255)` | ✗ | Ví dụ: `Đơn hàng #<id> đã được xác nhận` |
-| `payload` | `jsonb` | ✗ | Mặc định `'{}'`. Gồm `orderId`, `totalAmount`, `items`… |
+| `subject` | `varchar(255)` | ✗ | Tiếng Anh. `ORDER_CONFIRMED`: `Order <id> confirmed` |
+| `payload` | `jsonb` | ✗ | Mặc định `'{}'`. `ORDER_CONFIRMED` ghi `{ orderId, totalAmount }` ([05 §5](05-order-processing.md#5-xử-lý-job-process-order)) |
 | `created_at` | `timestamptz` | ✗ | `now()` |
 | | | | `uq_notification_logs_order_type` `UNIQUE(order_id, type)`. **Đây là bảo đảm idempotency ở tầng DB**: không thể có 2 thông báo `ORDER_CONFIRMED` cho cùng một đơn |
 
