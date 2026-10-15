@@ -358,7 +358,7 @@ Không có body. Chuyển `PENDING | CONFIRMED → CANCELLED` (`cancelReason = C
 | `state` | `await job.getState()` | `waiting`, `delayed` (đang chờ retry), `active`, `completed`, `failed`, `unknown` |
 | `attemptsMade` | `job.attemptsMade` | Số lần thử đã thực hiện |
 | `maxAttempts` | `job.opts.attempts` | |
-| `failedReason` | `job.failedReason` | Lý do lỗi gần nhất. Có giá trị cả khi job đang `delayed` chờ retry |
+| `failedReason` | `job.failedReason` | Lý do lỗi gần nhất. Có giá trị cả khi job đang `delayed` chờ retry. Không bao giờ là chuỗi rỗng: lỗi không có message (ví dụ `AggregateError` khi Postgres từ chối kết nối) được ném lại với thông điệp của các lỗi con ([05 §5](05-order-processing.md#5-xử-lý-job-process-order)) |
 | `returnValue` | `job.returnvalue` | `{ "result": "CONFIRMED" }` hoặc `{ "skipped": true, "reason": "…" }` |
 | `createdAt` / `processedAt` / `finishedAt` | `job.timestamp` / `job.processedOn` / `job.finishedOn` | Epoch ms chuyển sang ISO |
 

@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { Job, UnrecoverableError } from 'bullmq';
-import { errorMessage } from '../common/utils/error-message';
+import {
+  errorMessage,
+  withReadableMessage,
+} from '../common/utils/error-message';
 import {
   RANDOM_SOURCE,
   type RandomSource,
@@ -106,7 +109,22 @@ export class OrderProcessingProcessor
     this.logRedisError(error);
   }
 
+  /**
+   * Called by BullMQ for every job of the queue. BullMQ keeps only
+   * `error.message` as the job's failedReason, which GET /orders/:id/jobs
+   * shows, so an error with an empty message (a refused database connection
+   * is an AggregateError without one) is rethrown with a readable message.
+   */
   async process(job: Job): Promise<unknown> {
+    try {
+      // `return await`: without it, a rejection would skip this catch.
+      return await this.runJob(job);
+    } catch (error) {
+      throw withReadableMessage(error);
+    }
+  }
+
+  private async runJob(job: Job): Promise<unknown> {
     // Any name that is not an OrderJobName ends in the default branch.
     switch (job.name as OrderJobName) {
       case OrderJobName.ProcessOrder:
@@ -161,7 +179,8 @@ export class OrderProcessingProcessor
         `Order ${orderId} failed on its last attempt (${attempt}): ${errorMessage(error)}`,
       );
       await this.failOrder(orderId, error);
-      // BullMQ records the error as the job's failedReason and moves it to failed.
+      // BullMQ records the error's message as the job's failedReason (see
+      // `process`) and moves the job to failed.
       throw error;
     }
   }

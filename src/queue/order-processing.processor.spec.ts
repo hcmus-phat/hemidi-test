@@ -222,6 +222,48 @@ describe('OrderProcessingProcessor', () => {
       expect(ordersService.failOrder).not.toHaveBeenCalled();
     });
 
+    describe('when the error has no message (refused database connection)', () => {
+      // What pg rejects with when nothing listens on `localhost`: one inner
+      // error per address tried, and an empty message of its own. BullMQ
+      // keeps only `error.message` as the job's failedReason.
+      const refused = new AggregateError([
+        Object.assign(new Error('connect ECONNREFUSED ::1:5432'), {
+          code: 'ECONNREFUSED',
+        }),
+        Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), {
+          code: 'ECONNREFUSED',
+        }),
+      ]);
+      const readable =
+        'connect ECONNREFUSED ::1:5432; connect ECONNREFUSED 127.0.0.1:5432';
+
+      it('rethrows it with a readable message before the last attempt', async () => {
+        ordersService.getStatus.mockRejectedValue(refused);
+
+        const error = await processor
+          .process(processOrderJob(0, 4))
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error).toMatchObject({ message: readable, cause: refused });
+        expect(ordersService.failOrder).not.toHaveBeenCalled();
+      });
+
+      it('marks the order FAILED and rethrows it with a readable message on the last attempt', async () => {
+        ordersService.getStatus.mockRejectedValue(refused);
+
+        const error = await processor
+          .process(processOrderJob(3, 4))
+          .catch((e: unknown) => e);
+
+        expect(error).toMatchObject({ message: readable, cause: refused });
+        expect(ordersService.failOrder).toHaveBeenCalledWith(
+          ORDER_ID,
+          readable,
+        );
+      });
+    });
+
     it('keeps the error of the attempt when failOrder itself fails', async () => {
       failureSimulator.maybeFail.mockImplementation(() => {
         throw simulatedFailure;

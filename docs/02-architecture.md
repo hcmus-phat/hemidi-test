@@ -105,7 +105,7 @@ flowchart LR
 │   │       ├── sleep.ts                   # Sleeper: provider sleep(ms), test thay được
 │   │       ├── random-source.ts           # RANDOM_SOURCE: token inject Math.random
 │   │       ├── with-timeout.ts            # withTimeout(promise, ms): giới hạn thời gian chờ Redis
-│   │       ├── error-message.ts           # errorMessage(): thông điệp đọc được của mọi lỗi (kể cả AggregateError)
+│   │       ├── error-message.ts           # errorMessage(): thông điệp đọc được của mọi lỗi (kể cả AggregateError); withReadableMessage() cho failedReason của job
 │   │       └── truncate.ts                # Cắt thông điệp lỗi trước khi lưu DB (last_error, failure_reason)
 │   ├── products/
 │   │   ├── products.module.ts

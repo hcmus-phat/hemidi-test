@@ -18,3 +18,21 @@ export function errorMessage(error: unknown): string {
   const { code } = error as { code?: unknown };
   return typeof code === 'string' ? code : error.name;
 }
+
+/**
+ * `error` as an Error whose message is never empty, for code that keeps only
+ * `error.message`. BullMQ, for example, stores only the message as a job's
+ * failedReason, which GET /orders/:id/jobs shows.
+ *
+ * An Error that has a message is returned as it is, keeping its class (such
+ * as BullMQ's UnrecoverableError) and its stack. Anything else (an Error with
+ * an empty message, or a thrown value that is not an Error) is wrapped in a
+ * new Error with `errorMessage(error)` as its message and the original value
+ * as its `cause`.
+ */
+export function withReadableMessage(error: unknown): Error {
+  if (error instanceof Error && error.message) {
+    return error;
+  }
+  return new Error(errorMessage(error), { cause: error });
+}

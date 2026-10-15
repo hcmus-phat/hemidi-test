@@ -328,6 +328,15 @@ sequenceDiagram
 @Processor(ORDER_PROCESSING_QUEUE)
 export class OrderProcessingProcessor extends WorkerHost {
   async process(job: Job): Promise<unknown> {
+    try {
+      return await this.runJob(job);
+    } catch (error) {
+      // BullMQ chỉ lưu error.message làm failedReason: lỗi có message rỗng được bọc lại
+      throw withReadableMessage(error);
+    }
+  }
+
+  private async runJob(job: Job): Promise<unknown> {
     switch (job.name) {
       case OrderJobName.ProcessOrder:
         return this.processOrder(job as Job<ProcessOrderJobData>);
@@ -415,6 +424,7 @@ Code thật (`src/queue/order-processing.processor.ts`, `src/orders/orders.servi
 - `FailureSimulator` và `sleeper` là provider inject được, để unit test ép được kết quả thành công/lỗi.
 - **Ngữ nghĩa `attemptsMade` đã được kiểm chứng với BullMQ 6.3:** trong mã nguồn, `attemptsMade` chỉ tăng sau khi một lần chạy kết thúc (`Job.moveToFailed`/`moveToCompleted`), và BullMQ retry khi `attemptsMade + 1 < opts.attempts`. `isFinalAttempt` (hàm export của processor) là điều kiện ngược lại, nên khớp đúng với quyết định của BullMQ. Chạy MT-04 (`JOB_FAILURE_RATE=1`): log ghi `attempt 1/4` … `attempt 4/4`, đơn `FAILED` ở lần chạy thứ 4, hash của job trong Redis có `atm = 4`.
 - `failOrder` cắt `failure_reason` còn tối đa 1000 ký tự (`MAX_FAILURE_REASON_LENGTH`; cột là `text` nên không có giới hạn từ DB). Nếu `failOrder` lỗi, processor ghi log `ERROR` rồi vẫn ném lỗi gốc của lần thử, để `failedReason` của job là lỗi xử lý chứ không phải lỗi bù trừ.
+- **`failedReason` không bao giờ rỗng.** BullMQ chỉ lưu `error.message` làm `failedReason` (`Job.moveToFailed`), và khi đọc lại thì bỏ field rỗng, nên API trả `null`. Lỗi kết nối bị từ chối tới `localhost` (Postgres tắt) là một `AggregateError` có message rỗng. Vì vậy `process()` ném lại lỗi qua `withReadableMessage()` (`src/common/utils/error-message.ts`): lỗi đã có message giữ nguyên (kể cả `UnrecoverableError`, class và stack không đổi), lỗi message rỗng hoặc giá trị không phải `Error` được bọc trong một `Error` mới có message là `errorMessage(error)` (ví dụ `connect ECONNREFUSED ::1:5432; connect ECONNREFUSED 127.0.0.1:5432`) và `cause` là lỗi gốc.
 
 ## 6. Idempotency
 
