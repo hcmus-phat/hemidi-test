@@ -72,7 +72,7 @@
 ### Giai đoạn 6: Deploy (~0.5 ngày) → D-02, D-03
 
 - [ ] Neon: tạo DB, lấy pooled URL và direct URL. Chạy migration
-- [ ] Redis Cloud: tạo DB, đặt `noeviction`, lấy `rediss://` URL
+- [ ] Redis: Railway Redis cùng project với worker ([ADR-006](10-technical-decisions.md#adr-006-redis-production)), kiểm tra `noeviction`, lấy URL public cho Vercel
 - [ ] `src/vercel.ts`, `api/index.js`, `vercel.json`, Swagger lấy asset từ CDN. Deploy Vercel
 - [ ] Railway: deploy worker, khai báo env, pre-deploy migration
 - [ ] Smoke test ([08 §7](08-deployment.md#7-smoke-test-sau-khi-deploy)), MT-10
@@ -180,9 +180,9 @@ Hướng cải tiến (ngoài phạm vi, nên nêu để thể hiện hiểu bi�
 
 ## 7. Checklist nộp bài
 
-- [ ] Repo public (hoặc đã cấp quyền), lịch sử commit nhỏ và rõ ràng
-- [ ] Link API đã deploy, `/api/docs` hoạt động
-- [ ] Worker đã deploy và xử lý được đơn thật trên bản deploy
+- [x] Repo public (hoặc đã cấp quyền), lịch sử commit nhỏ và rõ ràng
+- [x] Link API đã deploy, `/api/docs` hoạt động
+- [x] Worker đã deploy và xử lý được đơn thật trên bản deploy
 - [ ] README có đủ 6 mục bắt buộc ở §5
 - [ ] `.env.example` có đủ biến, không lộ secret
 - [ ] `docker compose up -d`, `npm run migration:run`, `npm run start:dev` chạy được trên máy sạch

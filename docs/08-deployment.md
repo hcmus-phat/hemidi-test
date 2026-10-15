@@ -5,7 +5,7 @@
 | Môi trường | API | Worker | PostgreSQL | Redis |
 |---|---|---|---|---|
 | Local | `npm run start:dev` (cổng 3000) | `npm run start:worker:dev` | Docker `postgres:16-alpine` | Docker `redis:7-alpine` |
-| Production | Vercel (serverless) | Railway (tiến trình chạy lâu dài) | Neon | Redis Cloud (free) |
+| Production | Vercel (serverless) | Railway (tiến trình chạy lâu dài) | Neon | Railway Redis |
 
 ## 2. Chạy local
 
@@ -105,7 +105,7 @@ npm run start:worker:dev              # Worker: xem log xử lý job
 flowchart LR
   U["Client / Swagger UI"] -->|HTTPS| V["Vercel Function<br/>NestJS API"]
   V -->|"pooled connection, SSL<br/>(ghi đơn + outbox_events)"| N[("Neon PostgreSQL")]
-  V -.->|"rediss://, chỉ đọc trạng thái job"| RC[("Redis Cloud")]
+  V -.->|"URL public (TCP proxy), chỉ đọc trạng thái job"| RC[("Railway Redis")]
   W["Railway Service<br/>node dist/worker.js<br/>Outbox relay + BullMQ Worker"] -->|"Queue.add, lấy job"| RC
   W -->|"SSL"| N
 ```
@@ -114,7 +114,7 @@ flowchart LR
 |---|---|---|
 | API | **Vercel** | Theo yêu cầu đề. Không đẩy job (Outbox), không chạy worker. Chỉ đọc trạng thái job từ Redis |
 | PostgreSQL | **Neon** ([ADR-024](10-technical-decisions.md#adr-024-postgresql-production)) | Free tier, có connection pooler (PgBouncer), phù hợp với serverless vì có nhiều kết nối ngắn |
-| Redis | **Redis Cloud** free ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) | Phải đặt `maxmemory-policy = noeviction`. Không chọn Upstash vì worker BullMQ gửi lệnh liên tục kể cả khi rảnh (blocking pop, kiểm tra stalled, scheduler), dễ vượt hạn mức lệnh của gói free |
+| Redis | **Railway Redis** ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) | Service Redis trong cùng project với worker. Phải là `maxmemory-policy = noeviction` (mặc định của Redis). Ban đầu chọn Redis Cloud free, nhưng khi deploy Redis Cloud yêu cầu thanh toán. Không chọn Upstash vì worker BullMQ gửi lệnh liên tục kể cả khi rảnh (blocking pop, kiểm tra stalled, scheduler), dễ vượt hạn mức lệnh của gói free |
 | Worker | **Railway** ([ADR-005](10-technical-decisions.md#adr-005-nơi-chạy-worker)) | Chạy tiến trình Node lâu dài (relay outbox và BullMQ worker), deploy từ GitHub, không cần mở cổng. Phương án khác ở §5.4 |
 
 > Chính sách free tier của các nhà cung cấp thay đổi thường xuyên. Hãy kiểm tra lại tại thời điểm deploy và ghi lựa chọn cuối cùng vào README.
@@ -207,7 +207,7 @@ module.exports = require('../dist/vercel.bundle.js').default;
 ### 4.2 Các bước
 
 1. Import GitHub repo vào Vercel. Framework Preset là **Other**: `vercel.json` đặt `"framework": null` nên preset trong Project Settings bị ghi đè, kể cả khi Vercel tự chọn NestJS. Install Command, Build Command và cấu hình function lấy từ `vercel.json`. Phiên bản Node lấy từ `engines.node` (`^22.13`, tức 22.x), không cần chọn trong Project Settings.
-2. Khai báo Environment Variables: `DATABASE_URL` (**pooled** connection string của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://…`, chỉ để đọc trạng thái job), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Các biến `JOB_*` và `OUTBOX_*` chỉ cần ở worker. Không cần `NODE_ENV`: code không đọc biến này (§4.1).
+2. Khai báo Environment Variables: `DATABASE_URL` (**pooled** connection string của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`REDIS_PUBLIC_URL` của Railway Redis, dạng `redis://default:…@….proxy.rlwy.net:<port>`, chỉ để đọc trạng thái job; URL nội bộ `redis.railway.internal` không truy cập được từ Vercel), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Các biến `JOB_*` và `OUTBOX_*` chỉ cần ở worker. Không cần `NODE_ENV`: code không đọc biến này (§4.1).
 3. Chạy migration lên DB production **trước** khi deploy (§6).
 4. Deploy, rồi mở `https://<project>.vercel.app/api/docs` và `/health` (§7).
 
@@ -250,11 +250,11 @@ Vì vậy API (serverless) chỉ ghi đơn kèm sự kiện outbox vào DB. **Re
 
 ### 5.3 Railway: các bước
 
-1. **New Project → Deploy from GitHub repo**, chọn repo này.
+1. **New Project → Deploy from GitHub repo**, chọn repo này. Trong cùng project, thêm Redis: **+ New → Database → Add Redis**.
 2. **Build:** `npm ci --include=dev && npm run build` (Railway tự nhận diện Node và chọn phiên bản theo `engines.node`, tức 22.x). `--include=dev` cài Nest CLI và TypeScript (`devDependencies`) kể cả khi `NODE_ENV=production` có mặt lúc build (§4.1).
 3. **Start command:** `npm run start:worker:prod` (= `node dist/worker.js`).
 4. **Pre-deploy command** *(khuyến nghị)*: `npm run migration:run:prod`. Migration chạy ở **một nơi duy nhất**, trước mỗi lần deploy.
-5. **Variables:** `DATABASE_URL` (Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=5`, `REDIS_URL`, `JOB_ATTEMPTS=4`, `JOB_BACKOFF_DELAY_MS=2000`, `JOB_KEEP_COMPLETED_SECONDS`, `JOB_KEEP_FAILED_SECONDS`, `OUTBOX_POLL_INTERVAL_MS=1000`, `OUTBOX_BATCH_SIZE=50`, `OUTBOX_MAX_BACKOFF_MS=30000`, `JOB_PROCESSING_MIN_MS`, `JOB_PROCESSING_MAX_MS`, `JOB_FAILURE_RATE=0.3`, `WORKER_CONCURRENCY=5`, `ORDER_PENDING_TTL_MINUTES=30`, `EXPIRE_PENDING_EVERY_MS=300000`, `EXPIRE_BATCH_SIZE=100`.
+5. **Variables:** `DATABASE_URL` (Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=5`, `REDIS_URL` (biến tham chiếu `${{Redis.REDIS_PUBLIC_URL}}`; URL nội bộ chỉ có IPv6 ở một số môi trường của Railway, mà `parseRedisUrl()` chưa hỗ trợ `family=0` của ioredis), `JOB_ATTEMPTS=4`, `JOB_BACKOFF_DELAY_MS=2000`, `JOB_KEEP_COMPLETED_SECONDS`, `JOB_KEEP_FAILED_SECONDS`, `OUTBOX_POLL_INTERVAL_MS=1000`, `OUTBOX_BATCH_SIZE=50`, `OUTBOX_MAX_BACKOFF_MS=30000`, `JOB_PROCESSING_MIN_MS`, `JOB_PROCESSING_MAX_MS`, `JOB_FAILURE_RATE=0.3`, `WORKER_CONCURRENCY=5`, `ORDER_PENDING_TTL_MINUTES=30`, `EXPIRE_PENDING_EVERY_MS=300000`, `EXPIRE_BATCH_SIZE=100`.
 6. **Networking:** không cần public domain vì worker không nhận HTTP.
 7. **Replicas:** 1. **Restart policy:** On failure. (Scale lên nhiều replica vẫn an toàn nhờ `SKIP LOCKED` và lock job của BullMQ.)
 8. **Kiểm tra log:** thấy `Worker started on queue order-processing (concurrency 5)`, `Outbox relay started (poll every 1000 ms, batch of 50)` và `Job scheduler expire-pending-orders upserted`.
@@ -316,7 +316,7 @@ curl -s "$BASE/orders/<orderId>/jobs"   # state, attemptsMade, failedReason
 ## 8. Checklist triển khai
 
 - [ ] `.env` không bị commit, `.env.example` đầy đủ biến
-- [ ] Redis production đặt `maxmemory-policy noeviction` và dùng TLS (`rediss://`)
+- [ ] Redis production có `maxmemory-policy noeviction` (`CONFIG GET maxmemory-policy`) và dùng TLS (`rediss://`) nếu nhà cung cấp hỗ trợ
 - [ ] Đã chạy migration trên DB production (`SELECT * FROM migrations` thấy đủ các bản ghi)
 - [ ] API trên Vercel: `/api/docs` hiển thị, `/health` trả `ok`
 - [ ] Worker trên Railway: log báo đã khởi động, đơn test chuyển sang `CONFIRMED`

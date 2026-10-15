@@ -15,7 +15,7 @@ flowchart LR
   end
 
   API -->|"SQL (transaction, ghi outbox_events)"| PG[("PostgreSQL<br/>Neon")]
-  API -.->|"chỉ đọc trạng thái job"| R[("Redis Cloud<br/>queue: order-processing")]
+  API -.->|"chỉ đọc trạng thái job"| R[("Railway Redis<br/>queue: order-processing")]
   W -->|"relay: Queue.add(), worker: lấy job"| R
   W -->|"SQL (transaction, đọc outbox)"| PG
 ```
@@ -48,7 +48,7 @@ flowchart LR
 | ORM | TypeORM 1.x | `synchronize: false`, migration bằng TypeORM CLI |
 | DB | PostgreSQL 16 (local), Neon (production) | `gen_random_uuid()` có sẵn từ PG13 |
 | Queue | BullMQ 6.x, `@nestjs/bullmq` 12, ioredis 5.x | Job scheduler dùng `upsertJobScheduler`. BullMQ 6 coi `ioredis` là peer dependency tùy chọn nên dự án tự khai báo nó ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
-| Redis | Redis 7 (local), Redis Cloud (production) | Bắt buộc `maxmemory-policy noeviction` ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) |
+| Redis | Redis 7 (local), Railway Redis (production) | Bắt buộc `maxmemory-policy noeviction` ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) |
 | Validate | class-validator, class-transformer | `ValidationPipe` toàn cục |
 | Test | Jest (`@nestjs/testing`), ts-jest | Unit test có mock. Integration test dùng Postgres/Redis của docker-compose. Jest trên Node 22 không `require()` được ES module, nên các gói `@nestjs/*` được chuyển sang CommonJS khi test bằng `test/esm-to-cjs.transformer.js` ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)) |
 | Lint/format | ESLint (flat config, typescript-eslint type-checked), Prettier | Kết thúc dòng LF (`.gitattributes`) |

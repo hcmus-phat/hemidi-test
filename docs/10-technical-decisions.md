@@ -21,7 +21,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 | [ADR-003](#adr-003-đẩy-job-qua-transactional-outbox) | Đẩy job khi tạo đơn | Transactional Outbox, relay chạy trong worker | Đã duyệt |
 | [ADR-004](#adr-004-trạng-thái-của-đơn-hết-hạn) | Đơn hết hạn | `CANCELLED` với `cancel_reason = EXPIRED` | Đã duyệt |
 | [ADR-005](#adr-005-nơi-chạy-worker) | Nơi chạy worker | Railway | Đã duyệt |
-| [ADR-006](#adr-006-redis-production) | Redis production | Redis Cloud (free), `noeviction` | Đã duyệt |
+| [ADR-006](#adr-006-redis-production) | Redis production | Railway Redis (thay Redis Cloud), `noeviction` | Đã duyệt, sửa khi deploy |
 | [ADR-007](#adr-007-kiểu-dữ-liệu-tiền) | Kiểu tiền | `bigint`, đơn vị VND | Đã duyệt |
 | [ADR-008](#adr-008-khóa-chính) | Khóa chính | UUID (riêng `outbox_events` dùng `bigint identity`) | Đã duyệt |
 | [ADR-009](#adr-009-quy-tắc-duy-nhất-của-sku) | SKU duy nhất | Partial unique trên sản phẩm chưa xóa, chuẩn hóa chữ in hoa | Đã duyệt |
@@ -119,11 +119,12 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 ### ADR-006: Redis production
 
-- **Trạng thái:** Đã duyệt (2026-10-14)
+- **Trạng thái:** Đã duyệt (2026-10-14), sửa khi deploy (2026-10-15)
 - **Phương án:** Redis Cloud free, Railway Redis, Upstash.
-- **Quyết định:** Redis Cloud gói free. Bắt buộc đặt `maxmemory-policy = noeviction` và kết nối qua TLS (`rediss://`) nếu nhà cung cấp hỗ trợ.
-- **Lý do:** Giao thức TCP chuẩn mà BullMQ cần. Không bị hạn mức lệnh như Upstash, trong khi worker gửi lệnh liên tục. Độc lập với nơi chạy worker.
-- **Hệ quả:** Dung lượng nhỏ, nên giữ `removeOnComplete`/`removeOnFail` theo tuổi (7/14 ngày) để không đầy bộ nhớ.
+- **Quyết định ban đầu:** Redis Cloud gói free. Lý do: giao thức TCP chuẩn mà BullMQ cần, không bị hạn mức lệnh như Upstash (worker gửi lệnh liên tục), độc lập với nơi chạy worker.
+- **Quyết định khi deploy:** Railway Redis, một service Redis trong cùng project với worker, vì Redis Cloud yêu cầu thanh toán khi tạo database. Vẫn bắt buộc `maxmemory-policy = noeviction` (mặc định của Redis) và TLS (`rediss://`) nếu nhà cung cấp hỗ trợ.
+- **Lý do:** Phương án thứ hai trong danh sách, vẫn là Redis TCP chuẩn, không cần thêm tài khoản. Upstash vẫn bị loại vì hạn mức lệnh.
+- **Hệ quả:** Redis không còn độc lập với nơi chạy worker. Vercel ở ngoài mạng nội bộ của Railway nên kết nối qua TCP proxy public (`REDIS_PUBLIC_URL`, `redis://`, không TLS): mật khẩu Redis và dữ liệu job đi qua Internet không mã hóa. Chấp nhận cho bài tập; hệ thống thật nên dùng Redis có TLS. Dung lượng nhỏ, nên giữ `removeOnComplete`/`removeOnFail` theo tuổi (7/14 ngày) để không đầy bộ nhớ.
 
 ### ADR-007: Kiểu dữ liệu tiền
 
@@ -295,6 +296,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-006: Redis production đổi từ Redis Cloud sang Railway Redis (Redis Cloud yêu cầu thanh toán khi deploy). Deploy xong: API https://hemidi-test.vercel.app, worker và Redis trên Railway, Neon; smoke test và script race đạt trên bản deploy |
 | 2026-10-15 | ADR-025, ADR-029: function Vercel chạy `dist/vercel.bundle.js` (`npm run build:vercel`: tsc, rồi esbuild chuyển các gói chỉ có ES module sang CommonJS), vì Vercel chạy Node với `--no-experimental-require-module` và lần deploy đầu crash `ERR_REQUIRE_ESM`. Entity và migration liệt kê bằng class thay vì glob; `includeFiles` đổi từ `dist/**` thành `node_modules/swagger-ui-dist/**` |
 | 2026-10-15 | ADR-025: `vercel.json` đặt `"framework": null` (preset Other). Lần deploy đầu, Vercel tự nhận dự án là NestJS (backend framework) và build in cảnh báo rewrite nội bộ nay chuyển request theo đường dẫn đích; với rewrite `/(.*)` → `/api`, app có thể nhận `/api` cho mọi request |
 | 2026-10-15 | ADR-025: `vercel.json` có `installCommand: npm ci --include=dev`, build của Railway là `npm ci --include=dev && npm run build`, và `NODE_ENV=production` bị bỏ khỏi danh sách biến khi deploy. Biến này có mặt lúc cài thì npm bỏ `devDependencies` (Nest CLI, TypeScript), nên `nest build` lỗi. Code không đọc `NODE_ENV` (bỏ `appConfig.nodeEnv`/`isProduction` không dùng tới) |

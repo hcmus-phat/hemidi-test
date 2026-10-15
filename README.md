@@ -1,8 +1,8 @@
 # Mini Order Management
 
-**API:** `<API_URL>` · **Swagger:** `<SWAGGER_URL>` (`<API_URL>/api/docs`) · **Repo:** `<REPO_URL>`
+**API:** https://hemidi-test.vercel.app · **Swagger:** https://hemidi-test.vercel.app/api/docs · **Repo:** https://github.com/hcmus-phat/hemidi-test
 
-> **TODO (tác giả):** điền ba link trên sau khi deploy. Repo này **chưa được deploy** (chưa có tài khoản Vercel, Railway, Neon, Redis Cloud). Cấu hình deploy đã sẵn sàng và đã được kiểm tra local, xem [Deploy worker và lý do](#deploy-worker-và-lý-do).
+> API chạy trên Vercel, worker và Redis trên Railway, PostgreSQL trên Neon. API không có trang chủ (`/` trả `404`): dùng Swagger để thử. Kết quả kiểm tra trên bản deploy: [Deploy worker và lý do](#deploy-worker-và-lý-do).
 
 Backend REST quản lý **sản phẩm**, **tồn kho** và **đơn hàng** cho một cửa hàng online nhỏ: NestJS 12, PostgreSQL + TypeORM 1.x (migration, không `synchronize`), BullMQ 6 + Redis, Swagger.
 
@@ -269,13 +269,13 @@ COMMIT;
 
 ## Deploy worker và lý do
 
-Chi tiết: [docs/08](docs/08-deployment.md). **Trạng thái:** chưa deploy (TODO của tác giả, xem đầu README). Cấu hình đã có trong repo và handler Vercel đã được chạy thử local.
+Chi tiết: [docs/08](docs/08-deployment.md). **Trạng thái:** đã deploy. Smoke test trên bản deploy (2026-10-15): `/health` `ok` (database và redis `up`). Tạo sản phẩm `stock = 10`, tạo đơn 2 cái: `201 PENDING`, tồn kho còn 8, relay đẩy job khoảng 1s sau khi tạo đơn. Lần xử lý đầu gặp lỗi giả lập (`Simulated random processing failure`), BullMQ retry sau 2s và lần thứ hai thành công: đơn `CONFIRMED` khoảng 12s sau khi tạo, `GET /orders/:id/jobs` trả `attemptsMade: 2`, `maxAttempts: 4`, `state: completed`. `npm run race:last-item -- https://hemidi-test.vercel.app 20`: 1 đơn được tạo, 19 request nhận `409 INSUFFICIENT_STOCK` (từ bước kiểm tra dưới khóa dòng), tồn kho cuối 0.
 
 ```mermaid
 flowchart LR
   U["Client"] -->|HTTPS| V["Vercel function<br/>api/index.js → dist/vercel.bundle.js"]
   V -->|"pooled URL, SSL"| N[("Neon PostgreSQL")]
-  V -.->|"rediss://, đọc trạng thái job"| RC[("Redis Cloud<br/>noeviction")]
+  V -.->|"public URL, đọc trạng thái job"| RC[("Railway Redis<br/>noeviction")]
   W["Railway service<br/>node dist/worker.js"] -->|"relay + BullMQ Worker"| RC
   W -->|SSL| N
 ```
@@ -287,7 +287,7 @@ flowchart LR
 - `vercel.json`: `framework: null` (preset Other; nếu Vercel tự nhận NestJS, rewrite về `/api` có thể làm mọi route `404`), `installCommand: npm ci --include=dev` (`nest build` cần Nest CLI và TypeScript, là `devDependencies`, mà npm bỏ qua khi `NODE_ENV=production` có mặt lúc cài), `buildCommand: npm run build:vercel`, function `api/index.js` với `includeFiles: node_modules/swagger-ui-dist/**` (`SwaggerModule` nạp gói này qua `createRequire` nên công cụ dò file của Vercel không thấy) và `maxDuration: 30`, rewrite mọi path về `/api`. `public/.gitkeep` là thư mục output mà preset "Other" yêu cầu.
 - **Node 22.x:** local và Railway chạy `dist/` (CommonJS) trực tiếp, `require()` các gói `@nestjs/*` 12 (chỉ có ES module) nhờ `require(esm)` của Node ≥ 22.12. Vercel chọn major theo `engines.node`, map `>=22.13` sang 24.x, nên `engines.node` là `^22.13` để production chạy cùng major với môi trường đã test.
 - Swagger UI lấy asset từ cdnjs, nên trang docs không phụ thuộc file tĩnh do function phục vụ.
-- Env: `DATABASE_URL` (**pooled** URL của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://`), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Không cần `NODE_ENV`: code không đọc biến này.
+- Env: `DATABASE_URL` (**pooled** URL của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (URL public của Railway Redis), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Không cần `NODE_ENV`: code không đọc biến này.
 
 ### Worker trên Railway, và vì sao không chạy trên Vercel
 
@@ -306,7 +306,7 @@ Cấu hình Railway: build `npm ci --include=dev && npm run build`, start `npm r
 ### PostgreSQL, Redis và thứ tự deploy
 
 - **Neon:** API dùng **pooled** connection string (PgBouncer, hợp với nhiều kết nối ngắn của serverless), migration dùng **direct** connection string.
-- **Redis Cloud** (free): bắt buộc `maxmemory-policy noeviction` (Redis tự xóa key thì job biến mất không báo lỗi) và `rediss://`. Không chọn Upstash vì worker BullMQ gửi lệnh liên tục kể cả khi rảnh, dễ vượt hạn mức lệnh của gói free.
+- **Railway Redis** (service Redis trong cùng project với worker, [ADR-006](docs/10-technical-decisions.md#adr-006-redis-production)): bắt buộc `maxmemory-policy noeviction` (Redis tự xóa key thì job biến mất không báo lỗi), đây cũng là mặc định của Redis. Vercel nằm ngoài mạng nội bộ của Railway nên dùng URL public (`REDIS_PUBLIC_URL`, `redis://` qua TCP proxy, không TLS). Lựa chọn ban đầu là Redis Cloud, nhưng khi deploy Redis Cloud yêu cầu thanh toán. Không chọn Upstash vì worker BullMQ gửi lệnh liên tục kể cả khi rảnh, dễ vượt hạn mức lệnh của gói free.
 - **Thứ tự:** migration → worker → API. Migration không bao giờ chạy khi cold start (`synchronize: false`, `migrationsRun: false`).
 - Smoke test sau deploy: [docs/08 §7](docs/08-deployment.md#7-smoke-test-sau-khi-deploy) (`/health`, tạo sản phẩm và đơn, chờ `CONFIRMED`, `/orders/:id/jobs`).
 
@@ -367,7 +367,7 @@ Toàn bộ 29 quyết định, lý do và phương án đã cân nhắc: [docs/1
 | Unit test (UT-01..UT-03 bắt buộc, UT-04..UT-12) | ✅ | |
 | Test đồng thời (IT-01..IT-05) | ✅ | |
 | `GET /health` | ✅ | |
-| Deploy API (Vercel) và worker (Railway) | ❌ | Chưa thực hiện trong repo này: chưa có tài khoản. Cấu hình (`vercel.json`, `api/index.js`, `src/vercel.ts`, `engines`) đã có và đã chạy thử local. Link ở đầu README là TODO. MT-10 chưa làm |
+| Deploy API (Vercel) và worker (Railway) | ✅ | https://hemidi-test.vercel.app, worker và Redis trên Railway. MT-10 và script race đã chạy trên bản deploy ([Deploy worker và lý do](#deploy-worker-và-lý-do)) |
 | Script dữ liệu mẫu (`npm run seed`) | ❌ | Tùy chọn trong [docs/03 §8](docs/03-database.md#8-dữ-liệu-mẫu-seed-tùy-chọn), chưa làm. `npm run race:last-item` tự tạo sản phẩm `stock = 1` để demo |
 
 Hướng cải tiến:
