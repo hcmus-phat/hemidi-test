@@ -33,8 +33,9 @@ async function bootstrap(): Promise<RequestListener> {
   //
   // When create() rejects, Nest returns no app, so there is nothing to
   // close. Nothing is left open either: the DataSource gave up, and no Redis
-  // connection exists yet because QueueModule.forRoot waits for the
-  // connected DataSource before any Queue is built.
+  // connection exists yet. QueueModule registers the queue with
+  // registerQueueAsync, which injects the connected DataSource, so no Queue
+  // is built when the database fails (see queue.module.ts).
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     abortOnError: false,
   });

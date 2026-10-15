@@ -5,8 +5,8 @@ import { buildTypeOrmOptions } from './typeorm.options';
 
 /**
  * DataSource used only by the TypeORM CLI (migration:run, migration:revert,
- * migration:generate). The Nest app builds its own connection from the same
- * options in AppModule.
+ * migration:generate). The Nest apps build their own connection from the
+ * same options in DatabaseModule, shared by AppModule and WorkerModule.
  *
  * Like ConfigModule, values from `.env` never override real environment
  * variables, and the environment is validated before connecting.
