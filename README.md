@@ -100,7 +100,7 @@ Thử nhanh (bash):
 ```bash
 curl -s localhost:3000/health
 curl -s -X POST localhost:3000/products -H 'content-type: application/json' \
-  -d '{"sku":"tshirt-white-m","name":"Áo thun trắng size M","price":199000,"stock":5}'
+  -d '{"sku":"tshirt-white-m","name":"White T-shirt size M","price":199000,"stock":5}'
 curl -s -X POST localhost:3000/orders -H 'content-type: application/json' \
   -d '{"customerName":"Nguyen Van A","customerEmail":"a@example.com","items":[{"productId":"<productId>","quantity":2}]}'
 # khoảng 5–8 giây sau (relay ≤ 1s + xử lý 3–5s, lâu hơn nếu bị retry):
@@ -314,9 +314,9 @@ Cấu hình Railway: build `npm ci --include=dev && npm run build`, start `npm r
 
 | Lệnh | Nội dung |
 |---|---|
-| `npm test` | Unit test (Jest, không cần DB/Redis): 32 file, 371 test |
+| `npm test` | Unit test (Jest, không cần DB/Redis): các file `*.spec.ts` nằm cạnh code trong `src/` |
 | `npm run test:cov` | Unit test kèm coverage |
-| `npm run test:e2e` | Integration và đồng thời trên Postgres/Redis thật, cần `docker compose up -d`: 3 file, 9 test, chạy tuần tự (`--runInBand`). DB `mini_oms_test` tự được tạo nếu thiếu, migration chạy trong `globalSetup` |
+| `npm run test:e2e` | Integration và đồng thời trên Postgres/Redis thật, cần `docker compose up -d`: 3 file trong `test/`, chạy tuần tự (`--runInBand`). DB `mini_oms_test` tự được tạo nếu thiếu, migration chạy trong `globalSetup` |
 | `npm run lint`, `npm run typecheck` | ESLint (type-checked), `tsc --noEmit` |
 
 **Unit test** ([docs/07 §2–4](docs/07-testing.md#2-unit-test-bắt-buộc-cho-ordersservice)): UT-01..UT-12 đều có.
@@ -328,7 +328,7 @@ Cấu hình Railway: build `npm ci --include=dev && npm run build`, start `npm r
 | UT-07..UT-09 | Processor: bỏ qua đơn không còn `PENDING`, bù trừ ở lần thử cuối, ném lại lỗi ở các lần trước | `src/queue/order-processing.processor.spec.ts` |
 | UT-11, UT-12 | Relay: đẩy cả lô, dừng lô ở sự kiện Redis từ chối | `src/outbox/outbox-relay.service.spec.ts` |
 
-Ngoài ra: validate DTO qua đúng `ValidationPipe` production, exception filter (ánh xạ lỗi Postgres), validate env, tài liệu Swagger, producer và kết nối Redis, scheduler, `/health`, handler Vercel.
+Ngoài ra: validate DTO qua đúng `ValidationPipe` production, `:id` được chuẩn hóa thành chữ thường, exception filter (ánh xạ lỗi Postgres), validate env, tài liệu Swagger, producer và kết nối Redis, scheduler, `/health`, handler Vercel.
 
 **Integration / đồng thời** ([docs/07 §5](docs/07-testing.md#5-integration-test-và-test-đồng-thời)): IT-01, IT-01b, IT-02, IT-02b, IT-03 (`test/concurrency.e2e-spec.ts`), IT-04 (đẩy một đơn 3 lần vẫn 1 job), IT-05 (đơn tạo lúc Redis chết được đẩy khi Redis sống lại) (`test/outbox-relay.e2e-spec.ts`), `/health` `200` và `503` (`test/health.e2e-spec.ts`). Kết quả ở mục [Chống bán vượt tồn kho](#chống-bán-vượt-tồn-kho).
 
