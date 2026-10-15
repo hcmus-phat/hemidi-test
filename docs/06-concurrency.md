@@ -203,7 +203,15 @@ npm run race:last-item                                        # http://localhost
 npm run race:last-item -- https://<project>.vercel.app 50     # API khác, 50 đơn
 ```
 
-Script phân biệt hai loại `409 INSUFFICIENT_STOCK`: có `details` là do bước kiểm tra của `OrdersService`, không có `details` là do `CHECK (stock >= 0)` của Postgres (lỗi `23514`, `AllExceptionsFilter` ánh xạ sang `409` không kèm `details`). Script trả exit code 1 nếu có hơn một đơn được tạo hoặc tồn kho âm.
+Script phân biệt hai loại `409 INSUFFICIENT_STOCK`: có `details` là do bước kiểm tra của `OrdersService`, không có `details` là do `CHECK (stock >= 0)` của Postgres (lỗi `23514`, `AllExceptionsFilter` ánh xạ sang `409` không kèm `details`).
+
+Kết luận ở dòng cuối. Script chỉ in `OK` và trả exit code 0 khi đúng kết quả mong đợi: 1 đơn được tạo, N − 1 request bị từ chối `409 INSUFFICIENT_STOCK`, tồn kho cuối 0 (có lần từ chối đến từ `CHECK` thì vẫn `OK` nhưng kèm ghi chú, vì khi đó khóa dòng không hoạt động). Các trường hợp còn lại trả exit code 1 kèm lý do:
+
+- `OVERSOLD`: hơn một đơn được tạo, hoặc tồn kho âm.
+- `NOTHING SOLD`: không đơn nào được tạo, ví dụ mọi request nhận `503` (`lock_timeout`) hoặc `504` (timeout của nền tảng). Lần chạy đó không chứng minh được gì.
+- `UNEXPECTED`: đã bán đúng 1 nhưng có request kết thúc bằng status khác, hoặc tồn kho cuối khác 0.
+
+Mỗi request được ghi nhận riêng: body không phải JSON (trang lỗi HTML/text của Vercel) được đếm là `<status> (non-JSON body)`, lỗi mạng là `request failed: …`. Một response lạ không làm mất kết quả của các request khác.
 
 ### 9.2 Thí nghiệm bỏ khóa
 

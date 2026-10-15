@@ -8,6 +8,9 @@
  *
  * Expected: one order created, N - 1 refused with 409 INSUFFICIENT_STOCK by
  * the stock check of OrdersService (made under the row lock), final stock 0.
+ * The script prints OK and exits with 0 only then. Otherwise it exits with 1
+ * and says why: OVERSOLD, NOTHING SOLD (e.g. every request got a 503 or a
+ * 504) or UNEXPECTED (other statuses, listed above the verdict).
  *
  * A refusal without `details` comes from the CHECK (stock >= 0) constraint,
  * the last line of defence (AllExceptionsFilter maps it to a 409 without
@@ -49,30 +52,104 @@ function jsonPost(body: unknown): RequestInit {
   };
 }
 
-/** Sends one order and describes its outcome in a few words. */
+const CREATED = '201 order created';
+const REFUSED_BY_SERVICE =
+  '409 INSUFFICIENT_STOCK from the stock check of OrdersService';
+const REFUSED_BY_CHECK =
+  '409 INSUFFICIENT_STOCK from CHECK (stock >= 0) in Postgres';
+
+/**
+ * The error body of a response, or undefined when it is not JSON (e.g. the
+ * HTML or text page of a 502/504 from the hosting platform).
+ */
+function parseErrorBody(text: string): ErrorBody | undefined {
+  try {
+    return JSON.parse(text) as ErrorBody;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Sends one order and describes its outcome in a few words. Never rejects:
+ * one odd response must not hide the outcome of the others.
+ */
 async function placeOrder(
   baseUrl: string,
   productId: string,
   customer: number,
 ): Promise<string> {
-  const response = await fetch(
-    `${baseUrl}/orders`,
-    jsonPost({
-      customerName: `Race customer ${customer}`,
-      customerEmail: `race${customer}@example.com`,
-      items: [{ productId, quantity: 1 }],
-    }),
-  );
-  if (response.status === 201) {
-    return '201 order created';
+  try {
+    const response = await fetch(
+      `${baseUrl}/orders`,
+      jsonPost({
+        customerName: `Race customer ${customer}`,
+        customerEmail: `race${customer}@example.com`,
+        items: [{ productId, quantity: 1 }],
+      }),
+    );
+    if (response.status === 201) {
+      return CREATED;
+    }
+    const body = parseErrorBody(await response.text());
+    if (!body) {
+      return `${response.status} (non-JSON body)`;
+    }
+    if (response.status === 409 && body.error === 'INSUFFICIENT_STOCK') {
+      return body.details ? REFUSED_BY_SERVICE : REFUSED_BY_CHECK;
+    }
+    return `${response.status} ${body.error ?? ''}`.trim();
+  } catch (error) {
+    return `request failed: ${error instanceof Error ? error.message : String(error)}`;
   }
-  const body = (await response.json()) as ErrorBody;
-  if (response.status === 409 && body.error === 'INSUFFICIENT_STOCK') {
-    return body.details
-      ? '409 INSUFFICIENT_STOCK from the stock check of OrdersService'
-      : '409 INSUFFICIENT_STOCK from CHECK (stock >= 0) in Postgres';
+}
+
+/**
+ * What the run shows. Only the expected outcome is OK: one order created,
+ * every other request refused for lack of stock, final stock 0. Anything
+ * else (nothing sold, unexpected statuses) proves nothing about the lock.
+ */
+function verdict(
+  counts: Map<string, number>,
+  orders: number,
+  stock: number,
+): { ok: boolean; message: string } {
+  const created = counts.get(CREATED) ?? 0;
+  const byService = counts.get(REFUSED_BY_SERVICE) ?? 0;
+  const byCheck = counts.get(REFUSED_BY_CHECK) ?? 0;
+  if (created > 1 || stock < 0) {
+    return {
+      ok: false,
+      message: 'OVERSOLD: more orders than items in stock',
+    };
   }
-  return `${response.status} ${body.error ?? ''}`.trim();
+  if (created === 0) {
+    return {
+      ok: false,
+      message:
+        'NOTHING SOLD: no order was created, so the run proves nothing (see the statuses above)',
+    };
+  }
+  if (stock !== 0) {
+    return {
+      ok: false,
+      message: `UNEXPECTED: one order was created but the final stock is ${stock}, not 0`,
+    };
+  }
+  const others = orders - created - byService - byCheck;
+  if (others > 0) {
+    return {
+      ok: false,
+      message: `UNEXPECTED: sold once, but ${others} request(s) failed for another reason than the stock (see the statuses above)`,
+    };
+  }
+  return {
+    ok: true,
+    message:
+      byCheck > 0
+        ? `OK: the last item was sold once, but ${byCheck} refusal(s) came from the CHECK constraint, not from the stock check under the row lock`
+        : 'OK: the last item was sold once',
+  };
 }
 
 async function main(): Promise<void> {
@@ -112,13 +189,13 @@ async function main(): Promise<void> {
   const { stock } = await requestJson<ProductBody>(
     `${baseUrl}/products/${product.id}`,
   );
-  const created = counts.get('201 order created') ?? 0;
-  console.log(`Orders created: ${created}, final stock: ${stock}`);
-  if (created > 1 || stock < 0) {
-    console.log('OVERSOLD: more orders than items in stock');
+  console.log(
+    `Orders created: ${counts.get(CREATED) ?? 0}, final stock: ${stock}`,
+  );
+  const { ok, message } = verdict(counts, orders, stock);
+  console.log(message);
+  if (!ok) {
     process.exitCode = 1;
-  } else {
-    console.log('OK: the last item was sold once');
   }
 }
 

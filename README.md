@@ -387,5 +387,5 @@ Vấn đề đã biết:
 
 - `PATCH` `stock` tuyệt đối (ở trên).
 - Đồng hồ máy ảo Docker từng nhảy khoảng 14s khi phát triển. Code tính thời gian bằng đồng hồ của DB (`now()`), và test e2e đặt `DB_LOCK_TIMEOUT_MS=60000` để không phụ thuộc thời gian chờ khóa.
-- Chạy `npm test` một lần (trên commit gốc của giai đoạn này) Jest in cảnh báo `A worker process has failed to exit gracefully`. Không tái hiện được ở các lần chạy sau, kể cả với `--detectOpenHandles`.
+- `npm test` thỉnh thoảng (khoảng 1 trên 10 lần chạy) in cảnh báo `A worker process has failed to exit gracefully` của Jest. Mọi test vẫn pass; `--detectOpenHandles` không chỉ ra handle nào còn mở, nên chưa rõ nguyên nhân.
 - `npm audit`: dependency production không có lỗ hổng. 20 cảnh báo mức moderate nằm ở dependency dev (`sprintf-js` qua công cụ dev).

@@ -158,6 +158,7 @@ flowchart LR
 │   ├── jest-e2e.config.js                 # Cấu hình e2e (npm run test:e2e), dùng lại transform của jest.config.js
 │   ├── concurrency.e2e-spec.ts            # IT-01, IT-01b, IT-02, IT-02b, IT-03 (Postgres)
 │   ├── outbox-relay.e2e-spec.ts           # IT-04, IT-05 (Postgres và Redis)
+│   ├── health.e2e-spec.ts                 # GET /health: 200 khi Postgres và Redis chạy, 503 khi một check lỗi
 │   └── e2e/                               # globalSetup (tạo DB test, migration), nạp .env.test, test app, module relay không có vòng lặp
 ├── .env.test                              # Env của test e2e: giá trị mặc định của docker-compose, không có secret
 ├── docker-compose.yml
