@@ -595,7 +595,7 @@ Code thật: `OrdersService.getOrderJobs` trả `{ orderId, orderStatus, event, 
 
 | Sự cố | Ảnh hưởng | Cách hệ thống xử lý |
 |---|---|---|
-| Redis lỗi khi tạo đơn | **Không ảnh hưởng.** `POST /orders` không dùng Redis | Sự kiện nằm trong outbox. Relay retry với chu kỳ giãn dần, đẩy job khi Redis hoạt động trở lại |
+| Redis lỗi khi tạo đơn | **Không ảnh hưởng.** `POST /orders` không dùng Redis | Sự kiện nằm trong outbox. Relay retry với chu kỳ giãn dần, đẩy job khi Redis hoạt động trở lại. Thời gian hồi phục: xem ghi chú dưới bảng |
 | Redis lỗi khi gọi `GET /orders/:id/jobs` | Không đọc được trạng thái job | Trả `503 SERVICE_UNAVAILABLE` |
 | Worker không chạy | Sự kiện chưa được đẩy, đơn nằm ở `PENDING` | Khi worker chạy lại, relay đẩy job. Đơn quá hạn bị hủy, job của nó bỏ qua |
 | Relay crash giữa lô | Transaction rollback, sự kiện vẫn chưa publish | Lần quét sau đẩy lại. Có đẩy trùng cũng chỉ là no-op nhờ L1 |
@@ -605,3 +605,11 @@ Code thật: `OrdersService.getOrderJobs` trả `{ orderId, orderStatus, event, 
 | Redis tự xóa key (eviction) | Job biến mất không báo lỗi | Bắt buộc `maxmemory-policy noeviction` ([ADR-006](10-technical-decisions.md#adr-006-redis-production)) |
 | Deploy hoặc restart worker | SIGTERM | `enableShutdownHooks()`: dừng relay, `worker.close()` chờ job đang chạy xong rồi mới thoát. Nếu sau 10s vẫn chưa xong (ví dụ Redis đang tắt: lệnh `QUIT` của ioredis phải chờ sau các lệnh còn nằm trong offline queue), `exitIfShutdownHangs` (`src/bootstrap/shutdown-watchdog.ts`) ghi log lỗi và `exit(1)` |
 | Tắt API khi Redis đang tắt (sau khi đã từng kết nối) | SIGTERM | `QUIT` bị từ chối ngay (`enableOfflineQueue: false`), BullMQ bỏ cuộc nhưng client ioredis vẫn thử kết nối lại và giữ tiến trình sống. `main.ts` cũng dùng `exitIfShutdownHangs`: sau 10s thì `exit(1)` |
+
+**Hồi phục sau khi Redis chạy lại mất hàng chục giây, không phải vài giây.** Ba độ trễ cộng lại:
+
+1. **Kết nối lại:** BullMQ dùng `retryStrategy` mặc định của nó cho ioredis, `max(min(e^n, 20000), 1000)` ms (`redis-connection.ts` không ghi đè): các lần thử cách nhau khoảng 2.7s, 7.4s, rồi 20s, nên khi Redis đã chết hơn 10s, worker chỉ thử kết nối lại mỗi 20s.
+2. **Offline queue:** kết nối của worker giữ offline queue (`maxRetriesPerRequest: null`). Lệnh `queue.add` mà relay đã bỏ cuộc sau 3s (`REDIS_OPERATION_TIMEOUT_MS`) vẫn nằm trong hàng đợi đó và chạy ngay khi kết nối lại. Vì vậy job thường được tạo và xử lý **trước** khi relay đánh dấu `published_at`. Không có gì bị trùng: jobId cố định (L1).
+3. **Chu kỳ quét của relay:** sau mỗi lần lỗi, chu kỳ nhân đôi tới `OUTBOX_MAX_BACKOFF_MS` (30s). `published_at` chỉ được đặt ở lần quét kế tiếp. Nếu lần quét rơi vào lúc Redis đã chạy nhưng ioredis chưa kết nối lại, nó lỗi thêm một lần và chờ thêm 30s.
+
+Tổng cộng: đơn `CONFIRMED` sau tối đa khoảng 20s cộng thời gian xử lý (3–5s, thêm backoff nếu gặp lỗi giả lập), `published_at` sau tối đa khoảng 20s + 3s + 30s ≈ 55s. Đo trên máy dev (Redis tắt 70s, `JOB_FAILURE_RATE=0`): job bắt đầu sau 9s, đơn `CONFIRMED` sau 14s, `published_at` sau 17s. Muốn hồi phục nhanh hơn khi demo thì giảm `OUTBOX_MAX_BACKOFF_MS` (ví dụ 5000). Không rút ngắn mặc định vì chu kỳ dài giảm số lần quét vô ích khi Redis chết lâu.

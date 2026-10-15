@@ -215,7 +215,7 @@ Mỗi lần chạy: đọc trạng thái đơn (không còn `PENDING` thì kết
 
 | Sự cố | Hệ quả |
 |---|---|
-| Redis chết khi tạo đơn | Không ảnh hưởng: `POST /orders` vẫn `201`, sự kiện chờ trong outbox và được đẩy khi Redis sống lại (IT-05) |
+| Redis chết khi tạo đơn | Không ảnh hưởng: `POST /orders` vẫn `201`, sự kiện chờ trong outbox và được đẩy khi Redis sống lại (IT-05). Hồi phục mất hàng chục giây: ioredis của worker thử kết nối lại tối đa mỗi 20s, relay quét lại sau tối đa `OUTBOX_MAX_BACKOFF_MS` (30s), nên đơn `CONFIRMED` sau tối đa khoảng 20s cộng thời gian xử lý, còn `published_at` có thể muộn tới khoảng 55s ([docs/05 §11](docs/05-order-processing.md#11-các-chế-độ-lỗi-hạ-tầng)) |
 | Redis chết khi gọi `GET /orders/:id/jobs` | `503 SERVICE_UNAVAILABLE` ngay (hoặc sau tối đa 3s) |
 | Worker không chạy | Đơn nằm `PENDING`, relay đẩy job khi worker chạy lại. Quá 30 phút thì bị hủy (`EXPIRED`), job của nó sau đó bị bỏ qua |
 | Deploy hoặc restart worker (SIGTERM) | Relay dừng sau lô hiện tại, `worker.close()` chờ job đang chạy, quá 10s thì `exit(1)` |
