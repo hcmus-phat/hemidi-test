@@ -163,7 +163,7 @@ flowchart LR
 ├── .env.test                              # Env của test e2e: giá trị mặc định của docker-compose, không có secret
 ├── docker-compose.yml
 ├── .env.example
-├── vercel.json                       # buildCommand, function api/index.js (includeFiles dist/**), rewrite mọi path về /api
+├── vercel.json                       # installCommand (npm ci --include=dev), buildCommand, function api/index.js (includeFiles dist/**), rewrite mọi path về /api
 └── README.md
 ```
 
@@ -230,7 +230,7 @@ Mọi cấu hình đi qua `@nestjs/config`. Env được validate lúc khởi đ
 
 | Biến | Mặc định (dev) | Dùng ở | Mô tả |
 |---|---|---|---|
-| `NODE_ENV` | `development` | API, Worker | `development` / `test` / `production` |
+| `NODE_ENV` | `development` | — | `development` / `test` / `production`. Chỉ được validate (giá trị lạ làm tiến trình dừng), code không rẽ nhánh theo biến này: mỗi hành vi có biến riêng (`SWAGGER_ENABLED`, `DATABASE_SSL`, …). Khi deploy không cần đặt. Lưu ý: npm bỏ `devDependencies` khi `NODE_ENV=production`, nên lệnh cài trên Vercel/Railway là `npm ci --include=dev` ([08 §4.1](08-deployment.md#41-handler-serverless)) |
 | `PORT` | `3000` | API | Cổng HTTP khi chạy local |
 | `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/mini_oms` | API, Worker, CLI | Chuỗi kết nối Postgres |
 | `DATABASE_SSL` | `false` | API, Worker, CLI | `true` với Neon/Supabase |

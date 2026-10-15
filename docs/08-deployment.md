@@ -174,6 +174,7 @@ module.exports = require('../dist/vercel').default;
 // vercel.json
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci --include=dev",
   "buildCommand": "npm run build",
   "functions": {
     "api/index.js": { "includeFiles": "dist/**", "maxDuration": 30 }
@@ -185,6 +186,8 @@ module.exports = require('../dist/vercel').default;
 > **Vì sao trỏ vào `dist/` (đã build bằng `tsc`)?** NestJS cần `emitDecoratorMetadata` cho dependency injection. Các bundler dựa trên esbuild không phát sinh metadata này, nên DI sẽ hỏng khi chạy. Build bằng `nest build` (tsc) rồi để function `require` lại là cách an toàn nhất. `includeFiles: "dist/**"` đưa cả entity và migration vào function, vì TypeORM nạp chúng theo glob lúc chạy nên công cụ dò file của Vercel không tự thấy.
 > Vercel gần đây có hỗ trợ NestJS theo kiểu zero-config. Nếu muốn dùng, hãy đọc tài liệu Vercel hiện hành. Cách thủ công ở trên không phụ thuộc vào tính năng đó.
 
+> **Vì sao `installCommand` có `--include=dev`?** `nest build` cần Nest CLI, TypeScript và các gói `@types/*`, đều là `devDependencies`. Khi `NODE_ENV=production` có mặt lúc cài (biến của project trên Vercel có mặt cả ở bước cài, theo bài KB "Dependencies from package.json are missing after install" của Vercel), npm mặc định `omit=dev` và bỏ qua chúng, nên build lỗi (`nest: not found`). `--include=dev` luôn cài `devDependencies`, bất kể `NODE_ENV`. Gói dev không làm function nặng thêm: Vercel chỉ đưa vào function các file mà `api/index.js` thực sự `require` (cùng `includeFiles`). Code của dự án không đọc `NODE_ENV`, nên cũng không cần khai báo biến này (§4.2).
+
 **Phiên bản Node.js của function:** `dist/` là CommonJS và `require()` các gói `@nestjs/*` 12 (chỉ có ES module), nên cần Node ≥ 22.12 (`require(esm)`). Vercel chọn major theo `engines.node` của `package.json`, và ưu tiên nó hơn cài đặt của project. Theo tài liệu Vercel (đọc ngày 2026-10-15: có 22.x và 24.x, mặc định 24.x), một khoảng mở như `>=22.13` được map sang **24.x mới nhất**, còn `22.x`/`^22…` map sang 22.x mới nhất. Vì vậy `engines.node` là `^22.13`: tối thiểu 22.13 (TypeORM 1.x, `require(esm)`), và production (Vercel, Railway) chạy cùng major 22 với môi trường đã build và test ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)). `vercel.json` không có field chọn phiên bản Node.
 
 **Kiểm tra local (đã chạy, không cần tài khoản Vercel):**
@@ -193,11 +196,12 @@ module.exports = require('../dist/vercel').default;
 2. Một harness nhỏ tạo `http.createServer((req, res) => handler(req, res))` rồi gọi thử. Kết quả trên Node 22.19 với Postgres/Redis của docker-compose: lần gọi đầu khởi động app khoảng 1.2s (hai request đồng thời cùng chờ một lần khởi động). `/api/docs` `200` HTML tham chiếu asset Swagger UI 5.29.1 trên cdnjs, `/api/docs-json` `200` đủ các path (kể cả `/health`), `/health` `200` `ok`, `/products` `200`, `/products/abc` `400 VALIDATION_ERROR`, đường dẫn lạ `404 NOT_FOUND`.
 3. Với `DATABASE_URL` trỏ vào cổng không có Postgres: TypeORM thử kết nối 3 lần cách nhau 2s, handler trả `503` theo định dạng lỗi thống nhất sau khoảng 4s. Request sau chạy lại toàn bộ bước khởi động (lỗi không bị cache). Sau 3 lần khởi động lỗi, số client của Redis (`redis-cli info clients`) không đổi và tiến trình không giữ socket nào tới cổng 6379 (trước khi sửa: mỗi lần lỗi để lại một kết nối Redis). Với Postgres bị `docker pause` (nhận kết nối TCP nhưng không trả lời): `503` sau khoảng 19.5s; `docker unpause` rồi gọi lại thì cùng instance đó khởi động được và trả `200`.
 4. `node dist/main.js` vẫn chạy như trước (`src/main.ts` không đổi).
+5. Bước cài của nền tảng, trong một thư mục trống chỉ có `package.json`, `package-lock.json` và mã nguồn: `NODE_ENV=production npm ci` không cài Nest CLI (`node_modules/.bin/nest` không có, `nest build` lỗi), còn `NODE_ENV=production npm ci --include=dev` rồi `npm run build` tạo ra `dist/vercel.js` và `dist/worker.js`.
 
 ### 4.2 Các bước
 
-1. Import GitHub repo vào Vercel, chọn Framework Preset là **Other**. Build Command và cấu hình function lấy từ `vercel.json`. Phiên bản Node lấy từ `engines.node` (`^22.13`, tức 22.x), không cần chọn trong Project Settings.
-2. Khai báo Environment Variables: `NODE_ENV=production`, `DATABASE_URL` (**pooled** connection string của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://…`, chỉ để đọc trạng thái job), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Các biến `JOB_*` và `OUTBOX_*` chỉ cần ở worker.
+1. Import GitHub repo vào Vercel, chọn Framework Preset là **Other**. Install Command, Build Command và cấu hình function lấy từ `vercel.json`. Phiên bản Node lấy từ `engines.node` (`^22.13`, tức 22.x), không cần chọn trong Project Settings.
+2. Khai báo Environment Variables: `DATABASE_URL` (**pooled** connection string của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://…`, chỉ để đọc trạng thái job), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Các biến `JOB_*` và `OUTBOX_*` chỉ cần ở worker. Không cần `NODE_ENV`: code không đọc biến này (§4.1).
 3. Chạy migration lên DB production **trước** khi deploy (§6).
 4. Deploy, rồi mở `https://<project>.vercel.app/api/docs` và `/health` (§7).
 
@@ -214,6 +218,7 @@ module.exports = require('../dist/vercel').default;
 | Worker vô tình chạy trong function | `AppModule` không import `WorkerModule` hay bất kỳ `@Processor` nào |
 | Request treo khi Redis không truy cập được | `POST /orders` không dùng Redis (Outbox). `GET /orders/:id/jobs` dùng `enableOfflineQueue: false` để trả `503` ngay |
 | Vercel báo thiếu thư mục output (`public`) | Tạo thư mục `public/` rỗng (có `.gitkeep`) hoặc cấu hình `outputDirectory` |
+| Build lỗi `nest: not found` (hoặc thiếu `@types/*`) | `NODE_ENV=production` có mặt lúc cài nên npm bỏ `devDependencies`. `vercel.json` dùng `installCommand: npm ci --include=dev`; nếu Install Command bị ghi đè trong Project Settings, hãy giữ `--include=dev` (§4.1) |
 
 ## 5. Deploy worker
 
@@ -238,10 +243,10 @@ Vì vậy API (serverless) chỉ ghi đơn kèm sự kiện outbox vào DB. **Re
 ### 5.3 Railway: các bước
 
 1. **New Project → Deploy from GitHub repo**, chọn repo này.
-2. **Build:** `npm ci && npm run build` (Railway tự nhận diện Node và chọn phiên bản theo `engines.node`, tức 22.x).
+2. **Build:** `npm ci --include=dev && npm run build` (Railway tự nhận diện Node và chọn phiên bản theo `engines.node`, tức 22.x). `--include=dev` cài Nest CLI và TypeScript (`devDependencies`) kể cả khi `NODE_ENV=production` có mặt lúc build (§4.1).
 3. **Start command:** `npm run start:worker:prod` (= `node dist/worker.js`).
 4. **Pre-deploy command** *(khuyến nghị)*: `npm run migration:run:prod`. Migration chạy ở **một nơi duy nhất**, trước mỗi lần deploy.
-5. **Variables:** `NODE_ENV=production`, `DATABASE_URL` (Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=5`, `REDIS_URL`, `JOB_ATTEMPTS=4`, `JOB_BACKOFF_DELAY_MS=2000`, `JOB_KEEP_COMPLETED_SECONDS`, `JOB_KEEP_FAILED_SECONDS`, `OUTBOX_POLL_INTERVAL_MS=1000`, `OUTBOX_BATCH_SIZE=50`, `OUTBOX_MAX_BACKOFF_MS=30000`, `JOB_PROCESSING_MIN_MS`, `JOB_PROCESSING_MAX_MS`, `JOB_FAILURE_RATE=0.3`, `WORKER_CONCURRENCY=5`, `ORDER_PENDING_TTL_MINUTES=30`, `EXPIRE_PENDING_EVERY_MS=300000`, `EXPIRE_BATCH_SIZE=100`.
+5. **Variables:** `DATABASE_URL` (Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=5`, `REDIS_URL`, `JOB_ATTEMPTS=4`, `JOB_BACKOFF_DELAY_MS=2000`, `JOB_KEEP_COMPLETED_SECONDS`, `JOB_KEEP_FAILED_SECONDS`, `OUTBOX_POLL_INTERVAL_MS=1000`, `OUTBOX_BATCH_SIZE=50`, `OUTBOX_MAX_BACKOFF_MS=30000`, `JOB_PROCESSING_MIN_MS`, `JOB_PROCESSING_MAX_MS`, `JOB_FAILURE_RATE=0.3`, `WORKER_CONCURRENCY=5`, `ORDER_PENDING_TTL_MINUTES=30`, `EXPIRE_PENDING_EVERY_MS=300000`, `EXPIRE_BATCH_SIZE=100`.
 6. **Networking:** không cần public domain vì worker không nhận HTTP.
 7. **Replicas:** 1. **Restart policy:** On failure. (Scale lên nhiều replica vẫn an toàn nhờ `SKIP LOCKED` và lock job của BullMQ.)
 8. **Kiểm tra log:** thấy `Worker started on queue order-processing (concurrency 5)`, `Outbox relay started (poll every 1000 ms, batch of 50)` và `Job scheduler expire-pending-orders upserted`.

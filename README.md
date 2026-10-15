@@ -134,7 +134,8 @@ Danh sách đầy đủ, giá trị mặc định và quy tắc validate: [docs/
 | `OUTBOX_POLL_INTERVAL_MS` / `OUTBOX_BATCH_SIZE` / `OUTBOX_MAX_BACKOFF_MS` | `1000` / `50` / `30000` | Worker | Chu kỳ quét outbox, cỡ lô, chu kỳ tối đa khi Redis lỗi |
 | `ORDER_PENDING_TTL_MINUTES` / `EXPIRE_PENDING_EVERY_MS` / `EXPIRE_BATCH_SIZE` | `30` / `300000` / `100` | Worker | Job hủy đơn quá hạn |
 | `JOB_KEEP_COMPLETED_SECONDS` / `JOB_KEEP_FAILED_SECONDS` | 7 / 14 ngày | Worker | Thời gian giữ job đã xong trong Redis |
-| `SWAGGER_ENABLED`, `PORT`, `NODE_ENV`, `DATABASE_LOGGING` | `true`, `3000`, `development`, `false` | API | |
+| `SWAGGER_ENABLED`, `PORT`, `DATABASE_LOGGING` | `true`, `3000`, `false` | API | |
+| `NODE_ENV` | `development` | | Chỉ được validate (`development` / `test` / `production`), code không đọc. Không cần đặt khi deploy |
 
 `.env.test` (được commit, chỉ chứa giá trị mặc định của docker-compose) là env của test e2e: DB `mini_oms_test`, pool 40 connection.
 
@@ -283,10 +284,10 @@ flowchart LR
 
 - `nest build` (tsc) biên dịch ra `dist/`, function `api/index.js` chỉ `require('../dist/vercel').default`. Không dùng bundler esbuild của Vercel vì DI của Nest cần metadata của decorator mà tsc sinh ra ([ADR-025](docs/10-technical-decisions.md#adr-025-cách-deploy-nestjs-lên-vercel)).
 - `src/vercel.ts` dùng chung `configureApp()` với `main.ts`, tạo Nest app **một lần mỗi instance**, không bao giờ `listen()`. Khởi động lỗi thì trả `503` và request sau thử lại (lỗi không bị cache). Kết nối DB khi khởi động: tối đa 3 lần, mỗi lần tối đa 5s, cách nhau 2s, nên `503` đến trong `maxDuration` 30s kể cả khi DB không trả lời. Queue (kết nối Redis) chỉ được tạo sau khi DB đã kết nối, nên lần khởi động lỗi vì DB không để lại kết nối Redis nào ([docs/08 §4.3](docs/08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)).
-- `vercel.json`: `buildCommand: npm run build`, function `api/index.js` với `includeFiles: dist/**` (TypeORM nạp entity và migration theo glob) và `maxDuration: 30`, rewrite mọi path về `/api`. `public/.gitkeep` là thư mục output mà preset "Other" yêu cầu.
+- `vercel.json`: `installCommand: npm ci --include=dev` (`nest build` cần Nest CLI và TypeScript, là `devDependencies`, mà npm bỏ qua khi `NODE_ENV=production` có mặt lúc cài), `buildCommand: npm run build`, function `api/index.js` với `includeFiles: dist/**` (TypeORM nạp entity và migration theo glob) và `maxDuration: 30`, rewrite mọi path về `/api`. `public/.gitkeep` là thư mục output mà preset "Other" yêu cầu.
 - **Node 22.x:** `dist/` là CommonJS và `require()` các gói `@nestjs/*` 12 (chỉ có ES module), cần Node ≥ 22.12. Vercel chọn major theo `engines.node`, map `>=22.13` sang 24.x, nên `engines.node` là `^22.13` để production chạy cùng major với môi trường đã test.
 - Swagger UI lấy asset từ cdnjs (Vercel không phục vụ được file tĩnh trong `node_modules`).
-- Env: `NODE_ENV=production`, `DATABASE_URL` (**pooled** URL của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://`), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`.
+- Env: `DATABASE_URL` (**pooled** URL của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://`), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Không cần `NODE_ENV`: code không đọc biến này.
 
 ### Worker trên Railway, và vì sao không chạy trên Vercel
 
@@ -300,7 +301,7 @@ Function serverless không giữ được worker:
 
 Vì vậy API chỉ ghi đơn và sự kiện outbox, còn relay và consumer chạy trong `node dist/worker.js`. Chọn **Railway** ([ADR-005](docs/10-technical-decisions.md#adr-005-nơi-chạy-worker)): deploy thẳng từ GitHub, có **pre-deploy command** để chạy migration ở đúng một nơi, không cần mở cổng. Render Background Worker là gói trả phí, Web Service free của Render ngủ khi không có traffic. Phương án cron gọi endpoint serverless bị loại vì backoff không đúng giờ và phải tự quản lý lock job.
 
-Cấu hình Railway: build `npm ci && npm run build`, start `npm run start:worker:prod`, pre-deploy `npm run migration:run:prod`, 1 replica, restart On failure, không public domain, env như [docs/08 §5.3](docs/08-deployment.md#53-railway-các-bước). Scale nhiều replica vẫn an toàn nhờ `SKIP LOCKED` và lock job của BullMQ.
+Cấu hình Railway: build `npm ci --include=dev && npm run build`, start `npm run start:worker:prod`, pre-deploy `npm run migration:run:prod`, 1 replica, restart On failure, không public domain, env như [docs/08 §5.3](docs/08-deployment.md#53-railway-các-bước). Scale nhiều replica vẫn an toàn nhờ `SKIP LOCKED` và lock job của BullMQ.
 
 ### PostgreSQL, Redis và thứ tự deploy
 

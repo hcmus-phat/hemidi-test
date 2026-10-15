@@ -236,7 +236,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 ### ADR-025: Cách deploy NestJS lên Vercel
 
-- **Quyết định:** `nest build` (tsc) ra `dist/`. Function `api/index.js` `require('../dist/vercel')`, app được cache theo instance. `vercel.json` rewrite mọi đường dẫn về `/api`. Swagger UI lấy asset từ CDN.
+- **Quyết định:** `nest build` (tsc) ra `dist/`, sau khi cài bằng `npm ci --include=dev` (Nest CLI và TypeScript là `devDependencies`, npm bỏ chúng khi `NODE_ENV=production` có mặt lúc cài). Function `api/index.js` `require('../dist/vercel')`, app được cache theo instance. `vercel.json` rewrite mọi đường dẫn về `/api`. Swagger UI lấy asset từ CDN.
 - **Lý do:** DI của NestJS cần `emitDecoratorMetadata`, mà bundler dựa trên esbuild không sinh ra metadata này.
 - **Hệ quả:** Cần đối chiếu với tài liệu Vercel hiện hành. Nếu Vercel hỗ trợ NestJS zero-config ổn định thì có thể đơn giản hóa.
 - **Ghi nhận khi hiện thực (`src/vercel.ts`):** handler lấy app Express mà Nest tạo (`getHttpAdapter().getInstance()`) thay vì tự `import express` (không phải dependency trực tiếp). `abortOnError: false` để lỗi khởi động bị reject thay vì `process.exit()`. Promise khởi động lỗi không được cache, handler trả `503` theo định dạng thống nhất và request sau thử lại trong cùng tiến trình. Hệ quả của việc thử lại: lần khởi động lỗi không được để lại kết nối nào. Lỗi DB xảy ra trong `NestFactory.create()`, khi chưa có app để `close()`, nên `QueueModule` chỉ tạo Queue (và kết nối Redis của nó) sau khi DataSource kết nối xong (`registerQueueAsync` inject `DataSource`). Thời gian khởi động lỗi bị chặn trên bởi `connectTimeoutMS` 5s và 3 lần thử cách nhau 2s (≈ 19s khi DB không trả lời), trong `maxDuration` 30s ([08 §4.3](08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)). Không chọn `process.exit()` sau khi trả `503`: một instance Vercel phục vụ nhiều request cùng lúc, thoát tiến trình có thể cắt response của các request khác. Vercel chọn Node theo `engines.node` (xem ADR-029). Chưa deploy thật: đã kiểm tra bằng harness `http.createServer` local ([08 §4.1](08-deployment.md#41-handler-serverless)).
@@ -294,6 +294,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-025: `vercel.json` có `installCommand: npm ci --include=dev`, build của Railway là `npm ci --include=dev && npm run build`, và `NODE_ENV=production` bị bỏ khỏi danh sách biến khi deploy. Biến này có mặt lúc cài thì npm bỏ `devDependencies` (Nest CLI, TypeScript), nên `nest build` lỗi. Code không đọc `NODE_ENV` (bỏ `appConfig.nodeEnv`/`isProduction` không dùng tới) |
 | 2026-10-15 | ADR-008: `:id` trên URL được chuẩn hóa thành chữ thường sau khi validate (`uuidParam()`), và `buildOrderJobId` cũng tự chuyển về chữ thường. Trước đó, id viết hoa vẫn tìm thấy đơn (Postgres) nhưng không thấy job (key Redis phân biệt hoa thường): `GET /orders/:id/jobs` trả `jobs: []`, còn `job:requeue` thêm một job thứ hai |
 | 2026-10-15 | ADR-029: `engines.node` từ `>=22.13` thành `^22.13`, để Vercel chạy function trên Node 22.x thay vì 24.x. ADR-025: ghi nhận cách hiện thực handler (`getInstance()`, không cache lỗi khởi động) |
 | 2026-10-15 | ADR-011: ghi nhận ngoại lệ của `GET /health`: `503` giữ body `{ status, checks }` thay vì định dạng lỗi chung |

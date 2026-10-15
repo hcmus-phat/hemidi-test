@@ -1,5 +1,5 @@
 import { ConfigModuleOptions, registerAs } from '@nestjs/config';
-import { NodeEnv, validateEnv } from './env.validation';
+import { validateEnv } from './env.validation';
 
 /**
  * Typed configuration, split by concern. Inject one namespace with
@@ -12,8 +12,6 @@ import { NodeEnv, validateEnv } from './env.validation';
 export const appConfig = registerAs('app', () => {
   const env = validateEnv(process.env);
   return {
-    nodeEnv: env.NODE_ENV,
-    isProduction: env.NODE_ENV === NodeEnv.Production,
     port: env.PORT,
   };
 });
