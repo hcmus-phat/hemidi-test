@@ -18,10 +18,12 @@ import { buildOrderJobId } from '../queue/queue.constants';
  * Uses AppModule: the API's modules, without the worker or the relay.
  */
 async function main(): Promise<void> {
-  const orderId = process.argv[2];
-  if (!isUUID(orderId)) {
+  const arg = process.argv[2];
+  if (!isUUID(arg)) {
     throw new Error('Usage: npm run job:requeue -- <orderId>');
   }
+  // The form PostgreSQL returns, which the relay uses for the job and its data.
+  const orderId = arg.toLowerCase();
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['warn', 'error'],

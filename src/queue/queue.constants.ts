@@ -22,7 +22,11 @@ export interface ProcessOrderJobData {
  * ignores an `add` whose job id already exists, so the outbox relay can
  * publish the same event twice and still create a single job. The id has no
  * `:`, which BullMQ uses to build its Redis keys.
+ *
+ * A Redis key is case-sensitive but a UUID is not, so the id is built from
+ * the lower-case form, the one PostgreSQL returns: the same order always
+ * gets the same job id, whatever case the caller used.
  */
 export function buildOrderJobId(orderId: string): string {
-  return `order-${orderId}`;
+  return `order-${orderId.toLowerCase()}`;
 }

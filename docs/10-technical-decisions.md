@@ -142,7 +142,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 - **Trạng thái:** Đã duyệt (2026-10-14)
 - **Quyết định:** UUID (`gen_random_uuid()`) cho `products`, `orders`, `order_items`, `notification_logs`. Riêng `outbox_events` dùng `bigint GENERATED ALWAYS AS IDENTITY` để relay quét theo đúng thứ tự ghi.
 - **Lý do:** Không đoán được id, không lộ số lượng đơn, sinh ở DB, `jobId` dễ ghép.
-- **Hệ quả:** Validate path param bằng `ParseUUIDPipe`. `productId` trong DTO được chuẩn hóa thành chữ thường. Thao tác thủ công trên Swagger hơi bất tiện vì id dài.
+- **Hệ quả:** Validate path param bằng `ParseUUIDPipe` (`uuidParam()`), và chuẩn hóa thành chữ thường như `productId` trong DTO: Postgres so sánh UUID không phân biệt hoa thường, nhưng job id `order-{orderId}` là key Redis có phân biệt (`buildOrderJobId` cũng tự chuyển về chữ thường). Thao tác thủ công trên Swagger hơi bất tiện vì id dài.
 
 ### ADR-009: Quy tắc duy nhất của SKU
 
@@ -294,6 +294,7 @@ File này ghi lại **mọi quyết định kỹ thuật** của dự án: chọ
 
 | Ngày | Thay đổi |
 |---|---|
+| 2026-10-15 | ADR-008: `:id` trên URL được chuẩn hóa thành chữ thường sau khi validate (`uuidParam()`), và `buildOrderJobId` cũng tự chuyển về chữ thường. Trước đó, id viết hoa vẫn tìm thấy đơn (Postgres) nhưng không thấy job (key Redis phân biệt hoa thường): `GET /orders/:id/jobs` trả `jobs: []`, còn `job:requeue` thêm một job thứ hai |
 | 2026-10-15 | ADR-029: `engines.node` từ `>=22.13` thành `^22.13`, để Vercel chạy function trên Node 22.x thay vì 24.x. ADR-025: ghi nhận cách hiện thực handler (`getInstance()`, không cache lỗi khởi động) |
 | 2026-10-15 | ADR-011: ghi nhận ngoại lệ của `GET /health`: `503` giữ body `{ status, checks }` thay vì định dạng lỗi chung |
 | 2026-10-15 | ADR-003: relay lấy `orderId` từ `aggregate_id` thay vì `payload.orderId`. Payload `jsonb` không được DB kiểm tra, một sự kiện có payload sai sẽ bị lấy lại ở đầu mọi lô và có thể chặn các sự kiện phía sau |

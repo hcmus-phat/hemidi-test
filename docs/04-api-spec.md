@@ -7,7 +7,7 @@
 | Base URL | Local: `http://localhost:3000`. Production: `https://<project>.vercel.app` |
 | Swagger | `GET /api/docs` (UI), `GET /api/docs-json` (OpenAPI JSON) |
 | Định dạng | `Content-Type: application/json; charset=utf-8` |
-| ID | UUID v4. Sai định dạng thì trả `400 VALIDATION_ERROR` (dùng `ParseUUIDPipe`) |
+| ID | UUID v4. Sai định dạng thì trả `400 VALIDATION_ERROR` (`uuidParam()`, dựa trên `ParseUUIDPipe`). Không phân biệt hoa thường: `:id` được chuẩn hóa thành chữ thường (dạng Postgres trả về), vì job id `order-{orderId}` là key Redis có phân biệt hoa thường. Response luôn trả id chữ thường |
 | Thời gian | ISO 8601, UTC, ví dụ `2026-10-14T03:15:00.000Z` |
 | Tiền | Số nguyên (`integer`), đơn vị VND ([ADR-007](10-technical-decisions.md#adr-007-kiểu-dữ-liệu-tiền)) |
 | Phân trang | Query `page` (1–1 000 000, mặc định 1) và `limit` (1–100, mặc định 10). Cận trên của `page` chỉ để `OFFSET` luôn hợp lệ, trang vượt quá số trang vẫn trả `data: []` |

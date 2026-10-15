@@ -12,6 +12,12 @@ describe('uuidParam', () => {
     await expect(pipe.transform(id, metadata)).resolves.toBe(id);
   });
 
+  it('accepts an upper-case UUID and returns it in lower case', async () => {
+    await expect(
+      pipe.transform('8C1F6A2E-3B7D-4C55-9A0E-2F6D1B7C9E10', metadata),
+    ).resolves.toBe('8c1f6a2e-3b7d-4c55-9a0e-2f6d1b7c9e10');
+  });
+
   it.each(['abc', '123', '8c1f6a2e-3b7d-1c55-9a0e-2f6d1b7c9e10'])(
     'rejects %j with a VALIDATION_ERROR on the field',
     async (value) => {

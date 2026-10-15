@@ -179,7 +179,8 @@ Code thật:
 | `src/vercel.spec.ts` | Handler Vercel (`NestFactory` được mock): khởi động app một lần cho mọi request (kể cả hai request đồng thời), `abortOnError: false`, không `listen()`. Khởi động lỗi (`NestFactory.create()` reject vì DB) thì trả `503` theo định dạng thống nhất, ghi log, không có app để `close()`, và request sau khởi động lại. `init()` lỗi thì `close()` app khởi động dở |
 | `src/queue/queue.module.spec.ts` | `QueueModule` (Queue của BullMQ được mock): Queue được tạo với kết nối của vai trò sau khi DataSource sẵn sàng. DataSource lỗi thì không Queue nào được tạo, kể cả sau khi `compile()` đã reject, nên lần khởi động lỗi vì DB không mở kết nối Redis |
 | `src/health/health.service.spec.ts` | `HealthService`: cả hai `up` thì `ok`, DB lỗi hoặc Redis lỗi thì `error` với check tương ứng `down` (lý do chỉ ghi log), không trả lời quá 2s thì `down` (Jest fake timers), hai check chạy song song. `HealthController`: `503` khi `error`, giữ status mặc định `200` khi `ok` |
-| `src/queue/order-queue.producer.spec.ts`, `redis-connection.spec.ts`, `failure-simulator.spec.ts` | Option của job (`jobId`, `attempts`, `backoff`, `removeOn*`), timeout Redis, parse `REDIS_URL`, option kết nối theo vai trò, xác suất lỗi giả lập |
+| `src/queue/order-queue.producer.spec.ts`, `queue.constants.spec.ts`, `redis-connection.spec.ts`, `failure-simulator.spec.ts` | Option của job (`jobId`, `attempts`, `backoff`, `removeOn*`), timeout Redis, job id `order-{orderId}` luôn chữ thường, parse `REDIS_URL`, option kết nối theo vai trò, xác suất lỗi giả lập |
+| `src/common/pipes/uuid-param.pipe.spec.ts` | `:id` hợp lệ đi qua, id viết hoa được trả về ở dạng chữ thường, id sai định dạng hoặc không phải v4 thì `400 VALIDATION_ERROR` trên field |
 
 Các processor và relay được tạo trực tiếp bằng `new` với các dependency giả. `Logger` của Nest được `jest.spyOn(...).mockImplementation()` để output test gọn.
 

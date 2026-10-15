@@ -96,7 +96,7 @@ flowchart LR
 │   │   │   └── string-transforms.ts       # @Transform: trim, chữ hoa, chữ thường, chuỗi số → number (toNumberIfDecimal)
 │   │   ├── pipes/
 │   │   │   ├── validation.pipe.ts         # createValidationPipe(): ValidationPipe toàn cục, dùng chung với unit test DTO
-│   │   │   └── uuid-param.pipe.ts         # uuidParam('id'): ParseUUIDPipe trả lỗi VALIDATION_ERROR có details
+│   │   │   └── uuid-param.pipe.ts         # uuidParam('id'): ParseUUIDPipe trả lỗi VALIDATION_ERROR có details, id trả về ở dạng chữ thường
 │   │   ├── validators/
 │   │   │   └── is-greater-than-or-equal-to.decorator.ts  # So sánh hai field (maxPrice ≥ minPrice, env MAX ≥ MIN)
 │   │   ├── transformers/
