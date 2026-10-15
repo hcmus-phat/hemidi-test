@@ -221,7 +221,7 @@ Các thành phần dùng chung (khai báo trong `configure-app.ts` để `main.t
 
 - `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, exceptionFactory })`. `exceptionFactory` làm phẳng lỗi lồng nhau thành `details: [{ field: 'items.0.quantity', messages: [...] }]`. Pipe được tạo bởi `createValidationPipe()` (`common/pipes/validation.pipe.ts`). Unit test của DTO cũng gọi hàm này, nên luôn test đúng cấu hình production.
 - `AllExceptionsFilter`: chuyển `AppException`, `HttpException`, `QueryFailedError` (theo mã lỗi Postgres) và lỗi không xác định về [định dạng lỗi thống nhất](04-api-spec.md#2-định-dạng-lỗi-thống-nhất).
-- Swagger: `DocumentBuilder` cùng `SwaggerModule.setup('api/docs', …)`. Asset của Swagger UI tải từ CDN để chạy được trên Vercel (xem [08 §4.3](08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)).
+- Swagger: `DocumentBuilder` cùng `SwaggerModule.setup('api/docs', …)`. Asset của Swagger UI tải từ CDN để chạy được trên Vercel (xem [08 §4.3](08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)). Tài liệu là OpenAPI 3.0, nơi `nullable` chỉ có tác dụng với `type` trong cùng schema: đặt cạnh `$ref` (hoặc `allOf`) thì `null` vẫn không hợp lệ. Vì vậy field có thể `null` mà kiểu là enum hoặc DTO khác được khai báo riêng: `cancelReason` là enum inline có cả `null`, `dispatch` là `oneOf` gồm `$ref` của `OrderDispatchDto` và một nhánh chỉ nhận `null` (`swagger.spec.ts` kiểm tra cả hai).
 - `app.enableShutdownHooks()` để đóng kết nối DB/Redis và `worker.close()` gọn gàng khi nhận SIGTERM.
 
 ## 7. Cấu hình (biến môi trường)

@@ -163,6 +163,30 @@ describe('createSwaggerDocument', () => {
     },
   );
 
+  // OpenAPI 3.0: `nullable` only applies to a `type` in the same schema, so
+  // `nullable` next to a $ref (or allOf) would not allow null.
+  it.each(['OrderSummaryDto', 'OrderDetailDto'])(
+    'allows a null %s.cancelReason, with an inline enum that lists null',
+    (dto) => {
+      expect(schema(dto).properties.cancelReason).toMatchObject({
+        type: 'string',
+        nullable: true,
+        enum: ['CUSTOMER_REQUEST', 'EXPIRED', null],
+      });
+      expect(schema(dto).properties.cancelReason).not.toHaveProperty('allOf');
+    },
+  );
+
+  it('allows a null OrderJobsResponseDto.dispatch, with a null branch next to the $ref', () => {
+    expect(schema('OrderJobsResponseDto').properties.dispatch).toMatchObject({
+      oneOf: [
+        { $ref: '#/components/schemas/OrderDispatchDto' },
+        { type: 'object', nullable: true, enum: [null] },
+      ],
+    });
+    expect(schema('OrderDispatchDto').properties.status).toBeDefined();
+  });
+
   it('accepts a lower-case SKU, as the API does', () => {
     const pattern = new RegExp(
       schema('CreateProductDto').properties.sku.pattern as string,

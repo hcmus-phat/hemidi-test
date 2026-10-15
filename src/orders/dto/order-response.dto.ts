@@ -90,9 +90,12 @@ export class OrderSummaryDto {
   })
   totalAmount: number;
 
+  // An inline enum that lists null. In OpenAPI 3.0, `nullable` only applies to
+  // a `type` in the same schema: next to a $ref to a shared enum, the
+  // document would not allow the null that most orders have.
   @ApiProperty({
-    enum: CancelReason,
-    enumName: 'CancelReason',
+    type: 'string',
+    enum: [...Object.values(CancelReason), null],
     nullable: true,
     description: 'Set when status is CANCELLED',
     example: null,

@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, getSchemaPath } from '@nestjs/swagger';
 import { OutboxEvent } from '../../outbox/entities/outbox-event.entity';
 import type { OrderJobSnapshot } from '../../queue/order-queue.producer';
 import { OrderStatus } from '../order-status.enum';
@@ -141,6 +141,7 @@ export class OrderJobDto implements OrderJobSnapshot {
 }
 
 /** `GET /orders/:id/jobs`: where the order is in its background processing. */
+@ApiExtraModels(OrderDispatchDto)
 export class OrderJobsResponseDto {
   @ApiProperty({ format: 'uuid', example: ORDER_ID_EXAMPLE })
   orderId: string;
@@ -152,9 +153,14 @@ export class OrderJobsResponseDto {
   })
   orderStatus: OrderStatus;
 
+  // In OpenAPI 3.0, `nullable` next to a $ref does not allow null: it only
+  // applies to a `type` in the same schema. So null is a branch of its own,
+  // a schema whose only value is null.
   @ApiProperty({
-    type: OrderDispatchDto,
-    nullable: true,
+    oneOf: [
+      { $ref: getSchemaPath(OrderDispatchDto) },
+      { type: 'object', nullable: true, enum: [null] },
+    ],
     description: 'The ORDER_CREATED outbox event; null if there is none',
   })
   dispatch: OrderDispatchDto | null;
