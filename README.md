@@ -273,7 +273,7 @@ Chi tiết: [docs/08](docs/08-deployment.md). **Trạng thái:** chưa deploy (T
 
 ```mermaid
 flowchart LR
-  U["Client"] -->|HTTPS| V["Vercel function<br/>api/index.js → dist/vercel.js"]
+  U["Client"] -->|HTTPS| V["Vercel function<br/>api/index.js → dist/vercel.bundle.js"]
   V -->|"pooled URL, SSL"| N[("Neon PostgreSQL")]
   V -.->|"rediss://, đọc trạng thái job"| RC[("Redis Cloud<br/>noeviction")]
   W["Railway service<br/>node dist/worker.js"] -->|"relay + BullMQ Worker"| RC
@@ -282,11 +282,11 @@ flowchart LR
 
 ### API trên Vercel
 
-- `nest build` (tsc) biên dịch ra `dist/`, function `api/index.js` chỉ `require('../dist/vercel').default`. Không dùng bundler esbuild của Vercel vì DI của Nest cần metadata của decorator mà tsc sinh ra ([ADR-025](docs/10-technical-decisions.md#adr-025-cách-deploy-nestjs-lên-vercel)).
+- `npm run build:vercel`: `nest build` (tsc) biên dịch ra `dist/` (có metadata của decorator mà DI của Nest cần), rồi `scripts/bundle-vercel.js` (esbuild) gộp `dist/vercel.js` thành `dist/vercel.bundle.js`. Bước gộp chuyển các gói chỉ có ES module (`@nestjs/*`) sang CommonJS, vì Vercel chạy function **không có** `require(esm)`: lần deploy đầu crash `ERR_REQUIRE_ESM`. Function `api/index.js` chỉ `require('../dist/vercel.bundle.js').default` ([ADR-025](docs/10-technical-decisions.md#adr-025-cách-deploy-nestjs-lên-vercel)).
 - `src/vercel.ts` dùng chung `configureApp()` với `main.ts`, tạo Nest app **một lần mỗi instance**, không bao giờ `listen()`. Khởi động lỗi thì trả `503` và request sau thử lại (lỗi không bị cache). Kết nối DB khi khởi động: tối đa 3 lần, mỗi lần tối đa 5s, cách nhau 2s, nên `503` đến trong `maxDuration` 30s kể cả khi DB không trả lời. Queue (kết nối Redis) chỉ được tạo sau khi DB đã kết nối, nên lần khởi động lỗi vì DB không để lại kết nối Redis nào ([docs/08 §4.3](docs/08-deployment.md#43-lưu-ý-khi-chạy-nestjs-trên-vercel)).
-- `vercel.json`: `framework: null` (preset Other; nếu Vercel tự nhận NestJS, rewrite về `/api` có thể làm mọi route `404`), `installCommand: npm ci --include=dev` (`nest build` cần Nest CLI và TypeScript, là `devDependencies`, mà npm bỏ qua khi `NODE_ENV=production` có mặt lúc cài), `buildCommand: npm run build`, function `api/index.js` với `includeFiles: dist/**` (TypeORM nạp entity và migration theo glob) và `maxDuration: 30`, rewrite mọi path về `/api`. `public/.gitkeep` là thư mục output mà preset "Other" yêu cầu.
-- **Node 22.x:** `dist/` là CommonJS và `require()` các gói `@nestjs/*` 12 (chỉ có ES module), cần Node ≥ 22.12. Vercel chọn major theo `engines.node`, map `>=22.13` sang 24.x, nên `engines.node` là `^22.13` để production chạy cùng major với môi trường đã test.
-- Swagger UI lấy asset từ cdnjs (Vercel không phục vụ được file tĩnh trong `node_modules`).
+- `vercel.json`: `framework: null` (preset Other; nếu Vercel tự nhận NestJS, rewrite về `/api` có thể làm mọi route `404`), `installCommand: npm ci --include=dev` (`nest build` cần Nest CLI và TypeScript, là `devDependencies`, mà npm bỏ qua khi `NODE_ENV=production` có mặt lúc cài), `buildCommand: npm run build:vercel`, function `api/index.js` với `includeFiles: node_modules/swagger-ui-dist/**` (`SwaggerModule` nạp gói này qua `createRequire` nên công cụ dò file của Vercel không thấy) và `maxDuration: 30`, rewrite mọi path về `/api`. `public/.gitkeep` là thư mục output mà preset "Other" yêu cầu.
+- **Node 22.x:** local và Railway chạy `dist/` (CommonJS) trực tiếp, `require()` các gói `@nestjs/*` 12 (chỉ có ES module) nhờ `require(esm)` của Node ≥ 22.12. Vercel chọn major theo `engines.node`, map `>=22.13` sang 24.x, nên `engines.node` là `^22.13` để production chạy cùng major với môi trường đã test.
+- Swagger UI lấy asset từ cdnjs, nên trang docs không phụ thuộc file tĩnh do function phục vụ.
 - Env: `DATABASE_URL` (**pooled** URL của Neon), `DATABASE_SSL=true`, `DATABASE_POOL_MAX=3`, `REDIS_URL` (`rediss://`), `DB_LOCK_TIMEOUT_MS`, `SWAGGER_ENABLED=true`. Không cần `NODE_ENV`: code không đọc biến này.
 
 ### Worker trên Railway, và vì sao không chạy trên Vercel

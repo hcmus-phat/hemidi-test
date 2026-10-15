@@ -83,6 +83,7 @@ npm run start:worker:dev              # Worker: xem log xử lý job
 | Script | Lệnh | Mô tả |
 |---|---|---|
 | `build` | `nest build` | Biên dịch ra `dist/` (gồm `main.js`, `worker.js`, `vercel.js`, migrations) |
+| `build:vercel` | `nest build && node scripts/bundle-vercel.js` | Build của Vercel (`vercel.json`): thêm `dist/vercel.bundle.js`, trong đó các gói chỉ có ES module (`@nestjs/*`) đã được chuyển sang CommonJS (§4.1) |
 | `start:dev` | `nest start --watch` | API chế độ dev |
 | `start:prod` | `node dist/main.js` | API production (ngoài Vercel) |
 | `start:worker:dev` | `nest start --watch --entryFile worker` | Worker chế độ dev |
@@ -122,10 +123,10 @@ flowchart LR
 
 ### 4.1 Handler serverless
 
-Dùng chung `configureApp()` với `main.ts`. Nest app được tạo **một lần cho mỗi instance** và tái sử dụng giữa các lần gọi khi instance còn ấm. Code thật: `src/vercel.ts` (rút gọn bên dưới), `api/index.js`, `vercel.json`, `public/.gitkeep`.
+Dùng chung `configureApp()` với `main.ts`. Nest app được tạo **một lần cho mỗi instance** và tái sử dụng giữa các lần gọi khi instance còn ấm. Code thật: `src/vercel.ts` (rút gọn bên dưới), `scripts/bundle-vercel.js`, `api/index.js`, `vercel.json`, `public/.gitkeep`.
 
 ```ts
-// src/vercel.ts  (nest build biên dịch thành dist/vercel.js)
+// src/vercel.ts  (nest build biên dịch thành dist/vercel.js, scripts/bundle-vercel.js gộp thành dist/vercel.bundle.js)
 let ready: Promise<RequestListener> | undefined;   // app Express bên trong Nest
 
 async function bootstrap(): Promise<RequestListener> {
@@ -166,8 +167,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 Khác mẫu ban đầu: không `import express` (gói `express` chỉ là dependency gián tiếp qua `@nestjs/platform-express`), mà lấy app Express mà Nest tự tạo bằng `getHttpAdapter().getInstance()`.
 
 ```js
-// api/index.js: entry của Vercel, trỏ vào code đã được tsc biên dịch
-module.exports = require('../dist/vercel').default;
+// api/index.js: entry của Vercel, trỏ vào bundle (tsc, rồi esbuild)
+module.exports = require('../dist/vercel.bundle.js').default;
 ```
 
 ```json
@@ -176,30 +177,32 @@ module.exports = require('../dist/vercel').default;
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "npm ci --include=dev",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:vercel",
   "functions": {
-    "api/index.js": { "includeFiles": "dist/**", "maxDuration": 30 }
+    "api/index.js": { "includeFiles": "node_modules/swagger-ui-dist/**", "maxDuration": 30 }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
 }
 ```
 
-> **Vì sao trỏ vào `dist/` (đã build bằng `tsc`)?** NestJS cần `emitDecoratorMetadata` cho dependency injection. Các bundler dựa trên esbuild không phát sinh metadata này, nên DI sẽ hỏng khi chạy. Build bằng `nest build` (tsc) rồi để function `require` lại là cách an toàn nhất. `includeFiles: "dist/**"` đưa cả entity và migration vào function, vì TypeORM nạp chúng theo glob lúc chạy nên công cụ dò file của Vercel không tự thấy.
+> **Vì sao tsc rồi mới bundle?** NestJS cần `emitDecoratorMetadata` cho dependency injection. esbuild không sinh metadata này khi biên dịch TypeScript, nên không cho esbuild đọc `src/`: `nest build` (tsc) biên dịch trước, metadata đã nằm trong JavaScript của `dist/`, rồi `scripts/bundle-vercel.js` mới gộp `dist/vercel.js` thành `dist/vercel.bundle.js`.
+>
+> **Vì sao phải bundle?** Vercel chạy function với cờ `--no-experimental-require-module`: `require()` một ES module ném `ERR_REQUIRE_ESM`, dù Node 22.12+ mặc định cho phép. Lần deploy đầu crash đúng như vậy ở dòng `require('@nestjs/common')` của `dist/vercel.js` (log runtime của Vercel). Script chỉ đưa vào bundle các gói chỉ có ES module (`@nestjs/*` và vài dependency của chúng, ví dụ `file-type`) và chuyển chúng sang CommonJS. Các gói `require()` được như bình thường (`typeorm`, `pg`, `bullmq`, `ioredis`, `class-validator`, `express`...) vẫn nạp từ `node_modules`, nên những file chúng tự đọc lúc chạy (ví dụ script Lua của BullMQ) vẫn đúng chỗ. Công cụ dò file của Vercel đi từ `api/index.js` qua bundle tới các gói này. Riêng `swagger-ui-dist` được nạp qua `createRequire` nên công cụ không thấy, trong khi `SwaggerModule.setup()` cần đường dẫn của nó lúc khởi động: `includeFiles` đưa gói này vào. Trong bundle, glob tính theo `__dirname` không còn trỏ đúng file, nên entity và migration được liệt kê bằng class trong `typeorm.options.ts` ([03 §7](03-database.md#7-kế-hoạch-migration)).
 > Vercel gần đây có hỗ trợ NestJS theo kiểu zero-config. Nếu muốn dùng, hãy đọc tài liệu Vercel hiện hành. Cách thủ công ở trên không phụ thuộc vào tính năng đó.
 
 > **Vì sao `"framework": null`?** `null` là preset **Other**, ghi đè preset trong Project Settings. Vercel tự nhận diện dự án có `@nestjs/core` là NestJS (backend framework) và dựng `src/main.ts` theo kiểu zero-config. Ở chế độ đó, rewrite nội bộ chuyển request theo **đường dẫn đích**: rewrite `/(.*)` → `/api` có thể làm app nhận `/api` cho mọi request, tức mọi route `404` (build in cảnh báo `Internal rewrites in backend framework projects now route requests using the rewritten destination path`). Với preset Other, function `api/index.js` nhận URL gốc như khi kiểm tra local.
 
 > **Vì sao `installCommand` có `--include=dev`?** `nest build` cần Nest CLI, TypeScript và các gói `@types/*`, đều là `devDependencies`. Khi `NODE_ENV=production` có mặt lúc cài (biến của project trên Vercel có mặt cả ở bước cài, theo bài KB "Dependencies from package.json are missing after install" của Vercel), npm mặc định `omit=dev` và bỏ qua chúng, nên build lỗi (`nest: not found`). `--include=dev` luôn cài `devDependencies`, bất kể `NODE_ENV`. Gói dev không làm function nặng thêm: Vercel chỉ đưa vào function các file mà `api/index.js` thực sự `require` (cùng `includeFiles`). Code của dự án không đọc `NODE_ENV`, nên cũng không cần khai báo biến này (§4.2).
 
-**Phiên bản Node.js của function:** `dist/` là CommonJS và `require()` các gói `@nestjs/*` 12 (chỉ có ES module), nên cần Node ≥ 22.12 (`require(esm)`). Vercel chọn major theo `engines.node` của `package.json`, và ưu tiên nó hơn cài đặt của project. Theo tài liệu Vercel (đọc ngày 2026-10-15: có 22.x và 24.x, mặc định 24.x), một khoảng mở như `>=22.13` được map sang **24.x mới nhất**, còn `22.x`/`^22…` map sang 22.x mới nhất. Vì vậy `engines.node` là `^22.13`: tối thiểu 22.13 (TypeORM 1.x, `require(esm)`), và production (Vercel, Railway) chạy cùng major 22 với môi trường đã build và test ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)). `vercel.json` không có field chọn phiên bản Node.
+**Phiên bản Node.js của function:** local và Railway chạy `dist/` trực tiếp, `require()` các gói `@nestjs/*` 12 (chỉ có ES module) nhờ `require(esm)` của Node ≥ 22.12. Trên Vercel tính năng này bị tắt, nên function chạy bundle (ở trên). Vercel chọn major theo `engines.node` của `package.json`, và ưu tiên nó hơn cài đặt của project. Theo tài liệu Vercel (đọc ngày 2026-10-15: có 22.x và 24.x, mặc định 24.x), một khoảng mở như `>=22.13` được map sang **24.x mới nhất**, còn `22.x`/`^22…` map sang 22.x mới nhất. Vì vậy `engines.node` là `^22.13`: tối thiểu 22.13 (TypeORM 1.x, `require(esm)`), và production (Vercel, Railway) chạy cùng major 22 với môi trường đã build và test ([ADR-029](10-technical-decisions.md#adr-029-phiên-bản-thư-viện)). `vercel.json` không có field chọn phiên bản Node.
 
 **Kiểm tra local (đã chạy, không cần tài khoản Vercel):**
 
-1. `npm run build`, rồi `node -e "require('./api/index.js')"`: nạp được và thoát ngay (chỉ nạp module, chưa khởi động app).
-2. Một harness nhỏ tạo `http.createServer((req, res) => handler(req, res))` rồi gọi thử. Kết quả trên Node 22.19 với Postgres/Redis của docker-compose: lần gọi đầu khởi động app khoảng 1.2s (hai request đồng thời cùng chờ một lần khởi động). `/api/docs` `200` HTML tham chiếu asset Swagger UI 5.29.1 trên cdnjs, `/api/docs-json` `200` đủ các path (kể cả `/health`), `/health` `200` `ok`, `/products` `200`, `/products/abc` `400 VALIDATION_ERROR`, đường dẫn lạ `404 NOT_FOUND`.
+1. `npm run build:vercel`, rồi `node --no-experimental-require-module -e "require('./api/index.js')"`: nạp được và thoát ngay (chỉ nạp module, chưa khởi động app). Cờ này tái hiện runtime của Vercel: với `dist/vercel.js` chưa bundle, lệnh ném `ERR_REQUIRE_ESM` giống log của lần deploy đầu.
+2. Một harness nhỏ tạo `http.createServer((req, res) => handler(req, res))` rồi gọi thử. Bản bundle được chạy với `--no-experimental-require-module`, trong một thư mục chỉ chứa các file mà `@vercel/nft` (công cụ dò file của Vercel) tìm thấy từ `api/index.js` cộng `includeFiles`, không có `.env`: `/health`, `/api/docs`, `/api/docs-json`, tạo sản phẩm, tạo đơn, xem đơn và job, hủy đơn, `400` và `404` đều trả đúng. Lần kiểm tra trước đó (chưa bundle), kết quả trên Node 22.19 với Postgres/Redis của docker-compose: lần gọi đầu khởi động app khoảng 1.2s (hai request đồng thời cùng chờ một lần khởi động). `/api/docs` `200` HTML tham chiếu asset Swagger UI 5.29.1 trên cdnjs, `/api/docs-json` `200` đủ các path (kể cả `/health`), `/health` `200` `ok`, `/products` `200`, `/products/abc` `400 VALIDATION_ERROR`, đường dẫn lạ `404 NOT_FOUND`.
 3. Với `DATABASE_URL` trỏ vào cổng không có Postgres: TypeORM thử kết nối 3 lần cách nhau 2s, handler trả `503` theo định dạng lỗi thống nhất sau khoảng 4s. Request sau chạy lại toàn bộ bước khởi động (lỗi không bị cache). Sau 3 lần khởi động lỗi, số client của Redis (`redis-cli info clients`) không đổi và tiến trình không giữ socket nào tới cổng 6379 (trước khi sửa: mỗi lần lỗi để lại một kết nối Redis). Với Postgres bị `docker pause` (nhận kết nối TCP nhưng không trả lời): `503` sau khoảng 19.5s; `docker unpause` rồi gọi lại thì cùng instance đó khởi động được và trả `200`.
 4. `node dist/main.js` vẫn chạy như trước (`src/main.ts` không đổi).
-5. Bước cài của nền tảng, trong một thư mục trống chỉ có `package.json`, `package-lock.json` và mã nguồn: `NODE_ENV=production npm ci` không cài Nest CLI (`node_modules/.bin/nest` không có, `nest build` lỗi), còn `NODE_ENV=production npm ci --include=dev` rồi `npm run build` tạo ra `dist/vercel.js` và `dist/worker.js`.
+5. Bước cài của nền tảng, trong một thư mục trống chỉ có `package.json`, `package-lock.json` và mã nguồn: `NODE_ENV=production npm ci` không cài Nest CLI (`node_modules/.bin/nest` không có, `nest build` lỗi), còn `NODE_ENV=production npm ci --include=dev` rồi `npm run build` tạo ra `dist/vercel.js` và `dist/worker.js` (`build:vercel` thêm `dist/vercel.bundle.js`).
 
 ### 4.2 Các bước
 
@@ -221,6 +224,7 @@ module.exports = require('../dist/vercel').default;
 | Worker vô tình chạy trong function | `AppModule` không import `WorkerModule` hay bất kỳ `@Processor` nào |
 | Request treo khi Redis không truy cập được | `POST /orders` không dùng Redis (Outbox). `GET /orders/:id/jobs` dùng `enableOfflineQueue: false` để trả `503` ngay |
 | Build in cảnh báo `Internal rewrites in backend framework projects…` | Project đang chạy preset NestJS (zero-config) thay vì Other. Giữ `"framework": null` trong `vercel.json` (§4.1), hoặc chọn Framework Preset **Other** trong Project Settings, rồi redeploy không dùng build cache |
+| Function crash `500 FUNCTION_INVOCATION_FAILED`, log runtime có `ERR_REQUIRE_ESM: require() of ES Module …/@nestjs/common/index.js from …/dist/vercel.js` | Vercel tắt `require(esm)`. Build Command phải là `npm run build:vercel` (mặc định từ `vercel.json`) và `api/index.js` trỏ vào `dist/vercel.bundle.js` (§4.1). Tái hiện local: `node --no-experimental-require-module` |
 | Vercel báo thiếu thư mục output (`public`) | Tạo thư mục `public/` rỗng (có `.gitkeep`) hoặc cấu hình `outputDirectory` |
 | Build lỗi `nest: not found` (hoặc thiếu `@types/*`) | `NODE_ENV=production` có mặt lúc cài nên npm bỏ `devDependencies`. `vercel.json` dùng `installCommand: npm ci --include=dev`; nếu Install Command bị ghi đè trong Project Settings, hãy giữ `--include=dev` (§4.1) |
 

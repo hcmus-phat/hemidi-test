@@ -319,7 +319,7 @@ Quyết định: [ADR-007](10-technical-decisions.md#adr-007-kiểu-dữ-liệu-
 
 - `synchronize: false` ở **mọi** môi trường. `migrationsRun: false`: không tự chạy migration khi app khởi động (đặc biệt quan trọng trên Vercel, nơi mỗi lần cold start sẽ khởi động lại app).
 - DataSource cho CLI nằm ở `src/database/data-source.ts`, đọc `.env` qua `dotenv` (không ghi đè biến môi trường thật) rồi validate env giống lúc app khởi động.
-- `src/database/typeorm.options.ts` (`buildTypeOrmOptions`) dùng chung cho app và CLI: `poolSize = DATABASE_POOL_MAX`, `ssl = DATABASE_SSL`, `connectTimeoutMS = 5000` (mặc định của `pg` là chờ kết nối mãi mãi), glob `entities`/`migrations` tính theo vị trí file nên chạy được cả từ `src/*.ts` (ts-node) lẫn `dist/*.js`. `uuidExtension: pgcrypto` để TypeORM sinh `gen_random_uuid()` (có sẵn từ PG13) và `installExtensions: false` để không chạy `CREATE EXTENSION "uuid-ossp"` mỗi lần kết nối.
+- `src/database/typeorm.options.ts` (`buildTypeOrmOptions`) dùng chung cho app và CLI: `poolSize = DATABASE_POOL_MAX`, `ssl = DATABASE_SSL`, `connectTimeoutMS = 5000` (mặc định của `pg` là chờ kết nối mãi mãi), `entities` và `migrations` là danh sách class (không dùng glob, vì function Vercel chạy một bundle, nơi glob tính theo `__dirname` không còn trỏ đúng file, xem [08 §4.1](08-deployment.md#41-handler-serverless)). **Migration mới phải được thêm vào `MIGRATIONS`** trong file này, nếu không CLI và app sẽ không thấy nó. `uuidExtension: pgcrypto` để TypeORM sinh `gen_random_uuid()` (có sẵn từ PG13) và `installExtensions: false` để không chạy `CREATE EXTENSION "uuid-ossp"` mỗi lần kết nối.
 - Mỗi migration có `up` và `down` đầy đủ, `down` đảo ngược đúng thứ tự.
 
 | # | Migration | Nội dung |

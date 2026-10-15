@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "nest build",
+    "build:vercel": "nest build && node scripts/bundle-vercel.js",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.{ts,js}\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.{ts,js}\"",
     "start": "nest start",
@@ -62,6 +63,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^22.20.5",
     "@types/supertest": "^7.2.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.7",

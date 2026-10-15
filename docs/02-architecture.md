@@ -29,7 +29,7 @@ flowchart LR
 
 | | API | Worker |
 |---|---|---|
-| Entry point | `src/main.ts` (local/Docker), `api/index.js` → `dist/vercel.js` (Vercel, từ `src/vercel.ts`) | `src/worker.ts` |
+| Entry point | `src/main.ts` (local/Docker), `api/index.js` → `dist/vercel.bundle.js` (Vercel, từ `src/vercel.ts`) | `src/worker.ts` |
 | Bootstrap | `NestFactory.create(AppModule)` | `NestFactory.createApplicationContext(WorkerModule)` |
 | Module gốc | `AppModule` | `WorkerModule` |
 | BullMQ | `Queue`: chỉ `getJob` (đọc trạng thái) | `Queue.add` (relay outbox), `Worker` (`@Processor`), `upsertJobScheduler` |
@@ -58,7 +58,7 @@ flowchart LR
 ```text
 .
 ├── api/
-│   └── index.js                      # Function của Vercel: export handler của dist/vercel.js
+│   └── index.js                      # Function của Vercel: export handler của dist/vercel.bundle.js
 ├── public/
 │   └── .gitkeep                      # Thư mục output rỗng mà Vercel (preset Other) yêu cầu
 ├── src/
@@ -161,9 +161,11 @@ flowchart LR
 │   ├── health.e2e-spec.ts                 # GET /health: 200 khi Postgres và Redis chạy, 503 khi một check lỗi
 │   └── e2e/                               # globalSetup (tạo DB test, migration), nạp .env.test, test app, module relay không có vòng lặp
 ├── .env.test                              # Env của test e2e: giá trị mặc định của docker-compose, không có secret
+├── scripts/
+│   └── bundle-vercel.js              # npm run build:vercel: gộp dist/vercel.js thành dist/vercel.bundle.js, gói chỉ có ES module (@nestjs/*) sang CommonJS (08 §4.1)
 ├── docker-compose.yml
 ├── .env.example
-├── vercel.json                       # framework: null (preset Other), installCommand (npm ci --include=dev), buildCommand, function api/index.js (includeFiles dist/**), rewrite mọi path về /api
+├── vercel.json                       # framework: null (preset Other), installCommand (npm ci --include=dev), buildCommand (npm run build:vercel), function api/index.js (includeFiles swagger-ui-dist), rewrite mọi path về /api
 └── README.md
 ```
 
